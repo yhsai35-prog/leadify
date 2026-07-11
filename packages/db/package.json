@@ -1,0 +1,12 @@
+{
+  "name": "@bluwheelz/db",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Supabase migrations and seed data for the Bluwheelz Sales Platform",
+  "scripts": {
+    "migrate": "supabase db push",
+    "seed": "supabase db execute --file seeds/existing_clients.sql",
+    "reset": "supabase db reset",
+    "diff": "supabase db diff"
+  }
+}

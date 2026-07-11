@@ -1,0 +1,69 @@
+{
+  "name": "WF-2: Gmail Reply Tracker",
+  "meta": {
+    "description": "Polls each connected BDE Gmail mailbox for new messages on threads the platform started, and forwards them to the API for Claude-based sentiment classification. Never modifies pipeline state itself -- it only reports; a human still decides whether to advance a lead to Interested/Meeting."
+  },
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 5 }] } },
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 50,
+        "filters": { "q": "in:inbox newer_than:1d -from:me" }
+      },
+      "name": "Gmail: List Recent Inbox Messages",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "notesInFlow": "One instance of this node per connected mailbox credential -- n8n Cloud/self-hosted supports iterating credentials via a Sub-workflow per BDE, configured in the Credential Vault."
+    },
+    {
+      "parameters": {
+        "functionCode": "// Only forward messages that are replies on a thread with more than one message\n// (i.e. skip the original outbound email n8n itself sent).\nreturn items.filter(i => i.json.threadMessageCount > 1).map(i => ({ json: {\n  gmailThreadId: i.json.threadId,\n  fromEmail: i.json.from,\n  bodySnippet: (i.json.snippet || '').slice(0, 1000),\n  receivedAt: new Date(Number(i.json.internalDate)).toISOString()\n}}));"
+      },
+      "name": "Filter & Shape Replies",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "functionCode": "const crypto = require('crypto');\nconst secret = $env.N8N_WEBHOOK_SECRET;\nreturn items.map(item => {\n  const body = JSON.stringify(item.json);\n  const signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\n  return { json: { ...item.json, __signature: signature } };\n});"
+      },
+      "name": "Compute HMAC Per Item",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BLUWHEELZ_API_BASE_URL}}/v1/webhooks/n8n/reply-received",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParametersJson": "={{ JSON.stringify({ gmailThreadId: $json.gmailThreadId, fromEmail: $json.fromEmail, bodySnippet: $json.bodySnippet, receivedAt: $json.receivedAt }) }}",
+        "headerParameters": {
+          "parameters": [{ "name": "X-Leadify-Signature", "value": "={{$json.__signature}}" }]
+        }
+      },
+      "name": "Callback: Reply Received",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [880, 0],
+      "notesInFlow": "A 404 here (see n8nWebhookService.handleReplyReceived) means the thread doesn't match any email the platform sent -- safe to ignore, logged by n8n's execution history for spot-checking."
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": { "main": [[{ "node": "Gmail: List Recent Inbox Messages", "type": "main", "index": 0 }]] },
+    "Gmail: List Recent Inbox Messages": { "main": [[{ "node": "Filter & Shape Replies", "type": "main", "index": 0 }]] },
+    "Filter & Shape Replies": { "main": [[{ "node": "Compute HMAC Per Item", "type": "main", "index": 0 }]] },
+    "Compute HMAC Per Item": { "main": [[{ "node": "Callback: Reply Received", "type": "main", "index": 0 }]] }
+  }
+}

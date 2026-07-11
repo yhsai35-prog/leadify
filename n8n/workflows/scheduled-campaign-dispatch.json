@@ -1,0 +1,52 @@
+{
+  "name": "WF-3: Scheduled Send Dispatcher",
+  "meta": {
+    "description": "Runs every minute and asks the API which already-approved emails have a scheduled_at time that is now due. The API (ApprovalService.dispatchScheduledEmails) re-triggers WF-1 for each one -- this workflow never sends anything directly, it only asks the API to do so, keeping the approval-gate check in exactly one place."
+  },
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 1 }] } },
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BLUWHEELZ_API_BASE_URL}}/v1/internal/emails/dispatch-scheduled",
+        "method": "POST",
+        "headerParameters": {
+          "parameters": [{ "name": "X-Internal-Service-Key", "value": "={{$env.BLUWHEELZ_INTERNAL_SERVICE_KEY}}" }]
+        }
+      },
+      "name": "API: Dispatch Scheduled Emails",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BLUWHEELZ_API_BASE_URL}}/v1/internal/jobs/process",
+        "method": "POST",
+        "headerParameters": {
+          "parameters": [{ "name": "X-Internal-Service-Key", "value": "={{$env.BLUWHEELZ_INTERNAL_SERVICE_KEY}}" }]
+        }
+      },
+      "name": "API: Process Job Queue Tick",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [220, 160],
+      "notesInFlow": "Drives the async AI job queue (qualify/research/generate_email/similarity) in production instead of the in-process setInterval loop, which only runs in local dev (see apps/api/src/index.ts)."
+    }
+  ],
+  "connections": {
+    "Every Minute": {
+      "main": [
+        [
+          { "node": "API: Dispatch Scheduled Emails", "type": "main", "index": 0 },
+          { "node": "API: Process Job Queue Tick", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  }
+}

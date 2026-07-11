@@ -1,0 +1,46 @@
+# Single Render web service: API + React frontend on one URL.
+# Dashboard: New > Blueprint > connect repo, or New > Web Service with Docker.
+services:
+  - type: web
+    name: bluwheelz-sales
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_BASE_URL
+        sync: false
+      - key: WEB_APP_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: DEFAULT_ORGANIZATION_ID
+        value: 00000000-0000-0000-0000-000000000001
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: EMBEDDINGS_PROVIDER
+        value: voyage
+      - key: VOYAGE_API_KEY
+        sync: false
+      - key: APOLLO_API_KEY
+        sync: false
+      - key: N8N_BASE_URL
+        sync: false
+      - key: N8N_API_KEY
+        sync: false
+      - key: N8N_WEBHOOK_SECRET
+        sync: false
+      - key: INTERNAL_SERVICE_KEY
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_API_URL
+        value: ""

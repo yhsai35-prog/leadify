@@ -1,0 +1,111 @@
+{
+  "name": "WF-1: Email Send (Gmail)",
+  "meta": {
+    "description": "Triggered exclusively by ApprovalService.dispatchToN8n after an email has been approved (approved_by is set). Sends via the BDE's own connected Gmail account so replies land in their real inbox, then confirms delivery back to the API. This workflow never runs on unapproved content -- the API is the only caller and it validates approval status before invoking the webhook."
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "path": "trigger-email-send",
+        "httpMethod": "POST",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook: Trigger Email Send",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate required fields before touching Gmail.\nconst body = $input.first().json.body;\nconst required = ['emailId', 'to', 'subject', 'bodyHtml', 'fromMailboxUserId', 'callbackBaseUrl'];\nfor (const field of required) {\n  if (!body[field]) throw new Error(`Missing required field: ${field}`);\n}\nreturn [{ json: body }];"
+      },
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "to": "={{$json.to}}",
+        "subject": "={{$json.subject}}",
+        "message": "={{$json.bodyHtml}}",
+        "options": { "senderName": "Leadify Sales" }
+      },
+      "name": "Gmail: Send Message",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "notesInFlow": "Credential is selected dynamically per-mailbox via the fromMailboxUserId -> credential mapping maintained in n8n Credential Vault (see docs/architecture.md Gmail Integration section)."
+    },
+    {
+      "parameters": {
+        "url": "={{$('Validate Payload').item.json.callbackBaseUrl}}/v1/webhooks/n8n/email-sent",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "emailId", "value": "={{$('Validate Payload').item.json.emailId}}" },
+            { "name": "gmailMessageId", "value": "={{$json.id}}" },
+            { "name": "gmailThreadId", "value": "={{$json.threadId}}" },
+            { "name": "sentAt", "value": "={{$now.toISO()}}" }
+          ]
+        },
+        "headerParameters": {
+          "parameters": [{ "name": "X-Leadify-Signature", "value": "={{$('Compute HMAC').item.json.signature}}" }]
+        }
+      },
+      "name": "Callback: Email Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, -80]
+    },
+    {
+      "parameters": {
+        "functionCode": "const crypto = require('crypto');\nconst secret = $env.N8N_WEBHOOK_SECRET;\nconst body = JSON.stringify($input.first().json);\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { signature } }];"
+      },
+      "name": "Compute HMAC",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [660, 80],
+      "notesInFlow": "Must hash the exact same JSON string sent as the callback body so the API's HMAC check (see apps/api/src/middleware/webhookAuth.ts) matches."
+    },
+    {
+      "parameters": {
+        "url": "={{$('Validate Payload').item.json.callbackBaseUrl}}/v1/webhooks/n8n/send-failed",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "emailId", "value": "={{$('Validate Payload').item.json.emailId}}" },
+            { "name": "error", "value": "={{$json.error.message}}" }
+          ]
+        }
+      },
+      "name": "Callback: Send Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [440, 220],
+      "notesInFlow": "Connected to the error output of Gmail: Send Message via n8n's built-in error workflow branch."
+    },
+    {
+      "parameters": { "respondWith": "noData", "responseCode": 204 },
+      "name": "Respond 204",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [880, 0]
+    }
+  ],
+  "connections": {
+    "Webhook: Trigger Email Send": { "main": [[{ "node": "Validate Payload", "type": "main", "index": 0 }]] },
+    "Validate Payload": { "main": [[{ "node": "Gmail: Send Message", "type": "main", "index": 0 }]] },
+    "Gmail: Send Message": {
+      "main": [[{ "node": "Compute HMAC", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Callback: Send Failed", "type": "main", "index": 0 }]]
+    },
+    "Compute HMAC": { "main": [[{ "node": "Callback: Email Sent", "type": "main", "index": 0 }]] },
+    "Callback: Email Sent": { "main": [[{ "node": "Respond 204", "type": "main", "index": 0 }]] }
+  }
+}
