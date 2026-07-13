@@ -25,7 +25,8 @@ ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
 
 # Fail the image build if frontend auth config is missing — otherwise the SPA
 # boots to a blank white page (createClient(undefined, undefined)).
-RUN if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then \
+# $$ keeps values in the shell (not the Dockerfile layer / build log).
+RUN if [ -z "$$VITE_SUPABASE_URL" ] || [ -z "$$VITE_SUPABASE_ANON_KEY" ]; then \
       echo "ERROR: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set as" \
            "build-time env vars / Docker build args (Render Environment)." >&2; \
       exit 1; \
