@@ -11,9 +11,8 @@ import { apiClient } from "@/lib/apiClient";
 import { supabase } from "@/lib/supabaseClient";
 
 const RESEND_COOLDOWN_SECONDS = 30;
-/** Supabase email OTP length is configurable (commonly 6 or 8). */
-const OTP_MIN_LENGTH = 6;
-const OTP_MAX_LENGTH = 8;
+/** Supabase `{{ .Token }}` email OTP is 6 digits by default. */
+const OTP_LENGTH = 6;
 
 export function LoginPage() {
   const { session } = useAuth();
@@ -107,7 +106,7 @@ export function LoginPage() {
               ? "Preparing sign-in..."
               : step === "email"
                 ? "Sign in with your work email. We'll send you a one-time code. New accounts are invite-only."
-                : `Enter the code sent to ${email}.`}
+                : `Enter the ${OTP_LENGTH}-digit code sent to ${email}.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -135,7 +134,7 @@ export function LoginPage() {
           ) : (
             <form onSubmit={handleCodeSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="otp-code">Sign-in code</Label>
+                <Label htmlFor="otp-code">{OTP_LENGTH}-digit code</Label>
                 <Input
                   id="otp-code"
                   type="text"
@@ -143,19 +142,15 @@ export function LoginPage() {
                   autoComplete="one-time-code"
                   required
                   autoFocus
-                  maxLength={OTP_MAX_LENGTH}
+                  maxLength={OTP_LENGTH}
                   value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, OTP_MAX_LENGTH))}
-                  placeholder={"0".repeat(OTP_MAX_LENGTH)}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, OTP_LENGTH))}
+                  placeholder={"0".repeat(OTP_LENGTH)}
                   className="text-center text-lg tracking-[0.3em]"
                 />
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isSubmitting || code.length < OTP_MIN_LENGTH}
-              >
+              <Button type="submit" className="w-full" disabled={isSubmitting || code.length !== OTP_LENGTH}>
                 {isSubmitting ? "Verifying..." : "Verify & sign in"}
               </Button>
               <div className="flex items-center justify-between text-sm">

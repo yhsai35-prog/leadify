@@ -39,12 +39,9 @@ const otpRateLimit = rateLimit({
  * response is already sent so the response timing can't be used to probe
  * which emails have an account (account-enumeration protection).
  *
- * OTP email is sent by Supabase Auth over HTTPS — not by our SMTP mailer.
- * Render free web services block outbound SMTP (ports 25/465/587), so Gmail
- * SMTP from the API process works locally but fails silently in production.
- * Optional: configure the same Gmail App Password under Supabase → Auth →
- * SMTP so the message is branded / delivered via your mailbox instead of
- * Supabase's default mailer.
+ * OTP email is sent by Supabase Auth over HTTPS (Render free blocks SMTP).
+ * For a numeric code (not a magic link), the Magic Link email template in
+ * Supabase must include {{ .Token }} — see apps/api/.env.example.
  */
 async function sendOtpIfEligible(email: string): Promise<void> {
   const user = await usersRepository.findByEmail(email);
