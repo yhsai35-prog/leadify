@@ -9,6 +9,20 @@ function emptyToUndefined(value: unknown): unknown {
   return value;
 }
 
+/** Render/dashboard paste often includes quotes that break SMTP From addresses. */
+function stripWrappingQuotes(value: unknown): unknown {
+  const v = emptyToUndefined(value);
+  if (typeof v !== "string") return v;
+  const trimmed = v.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
 /**
  * Fails fast at boot if required configuration is missing, instead of
  * surfacing cryptic runtime errors the first time a service tries to use an
@@ -47,14 +61,12 @@ const envSchema = z.object({
 
   INTERNAL_SERVICE_KEY: z.string().min(16),
 
-  // Platform-level SMTP for transactional mail (follow-up reminders). All
-  // optional: when unset, reminder emails are skipped and only in-app
-  // notifications are created.
-  SMTP_HOST: z.string().optional(),
+  // Platform-level SMTP for transactional mail (OTP + reminders).
+  SMTP_HOST: z.preprocess(stripWrappingQuotes, z.string().optional()),
   SMTP_PORT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().optional(),
+  SMTP_USER: z.preprocess(stripWrappingQuotes, z.string().optional()),
+  SMTP_PASS: z.preprocess(stripWrappingQuotes, z.string().optional()),
+  SMTP_FROM: z.preprocess(stripWrappingQuotes, z.string().optional()),
 });
 
 function loadEnv() {

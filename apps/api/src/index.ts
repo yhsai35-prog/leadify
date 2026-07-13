@@ -75,6 +75,11 @@ app.use(errorHandler);
 
 app.listen(env.PORT, () => {
   logger.info(`Leadify API listening on port ${env.PORT} (${env.NODE_ENV})`);
+  if (env.SMTP_HOST && env.SMTP_PORT && env.SMTP_USER && env.SMTP_PASS) {
+    logger.info({ host: env.SMTP_HOST, port: env.SMTP_PORT, user: env.SMTP_USER }, "SMTP configured for OTP / transactional mail");
+  } else {
+    logger.warn("SMTP not fully configured — OTP emails will not be sent until SMTP_HOST/PORT/USER/PASS are set");
+  }
 });
 
 // Fallback in-process poller for local development / single-instance
