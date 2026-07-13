@@ -19,6 +19,12 @@ export const updateUserStatusSchema = z.object({
 });
 export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>;
 
+/** Passwordless login: request a one-time code emailed to the user. */
+export const requestOtpSchema = z.object({
+  email: z.string().email(),
+});
+export type RequestOtpInput = z.infer<typeof requestOtpSchema>;
+
 export interface AuthenticatedUser {
   id: string;
   organizationId: string;

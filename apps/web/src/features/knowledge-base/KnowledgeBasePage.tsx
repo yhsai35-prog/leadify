@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   Plus,
@@ -9,6 +9,8 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Upload,
+  FileText,
 } from "lucide-react";
 import type { KnowledgeBaseArticle } from "@bluwheelz/shared";
 import { ROLE_RANK, UserRole } from "@bluwheelz/shared";
@@ -25,7 +27,90 @@ import {
   useUpdateArticle,
   usePublishUpdate,
   useDeleteArticle,
+  useUploadKnowledgeBaseFile,
 } from "./useKnowledgeBase";
+
+const ACCEPTED_KB_FILE_TYPES = ".pdf,.docx";
+
+// ─── Upload Document Form ────────────────────────────────────────────────────
+
+function UploadDocumentForm({ onCancel }: { onCancel: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [category, setCategory] = useState("General");
+  const [title, setTitle] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadMutation = useUploadKnowledgeBaseFile();
+  const { toast } = useToast();
+
+  function handleSubmit() {
+    if (!file) return;
+    uploadMutation.mutate(
+      { file, category: category.trim() || "General", title: title.trim() || undefined },
+      {
+        onSuccess: () => {
+          toast({ title: "Document uploaded", description: "Text was extracted and added to the knowledge base.", variant: "success" });
+          onCancel();
+        },
+        onError: (err) => toast({ title: "Upload failed", description: err.message, variant: "error" }),
+      },
+    );
+  }
+
+  return (
+    <div className="space-y-4 rounded-lg border border-border bg-card p-5 shadow-sm">
+      <h3 className="text-base font-semibold">Upload Document</h3>
+      <p className="text-sm text-muted-foreground">
+        Upload a PDF or DOCX file. We&apos;ll extract its text into a new article automatically.
+      </p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="kb-upload-file">File</Label>
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              id="kb-upload-file"
+              type="file"
+              accept={ACCEPTED_KB_FILE_TYPES}
+              className="hidden"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+            <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+              <FileText className="mr-2 h-4 w-4" />
+              Choose file
+            </Button>
+            <span className="truncate text-sm text-muted-foreground">{file ? file.name : "No file selected (.pdf or .docx)"}</span>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="kb-upload-title">Title (optional)</Label>
+          <Input
+            id="kb-upload-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Defaults to the filename"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="kb-upload-category">Category</Label>
+          <Input
+            id="kb-upload-category"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="e.g. Company Overview"
+          />
+        </div>
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="sm" disabled={uploadMutation.isPending || !file} onClick={handleSubmit}>
+          {uploadMutation.isPending ? "Uploading..." : "Upload"}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 // ─── Article Form ────────────────────────────────────────────────────────────
 
@@ -159,6 +244,13 @@ function ArticleCard({
               <Badge variant="secondary">{article.category}</Badge>
               <span className="text-[11px] text-muted-foreground">v{article.version}</span>
               <span className="text-[11px] text-muted-foreground">Last updated: {formattedDate}</span>
+              {article.sourceType === "file" && article.sourceFilename && (
+                <Badge variant="outline" className="gap-1 font-normal">
+                  <FileText className="h-3 w-3" />
+                  {article.sourceFilename}
+                  {article.extractionStatus === "failed" && " (extraction failed)"}
+                </Badge>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -229,6 +321,7 @@ export function KnowledgeBasePage() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [showNewForm, setShowNewForm] = useState(false);
+  const [showUploadForm, setShowUploadForm] = useState(false);
 
   const isAdmin = !!user && ROLE_RANK[user.role] >= ROLE_RANK[UserRole.ADMIN];
 
@@ -280,13 +373,21 @@ export function KnowledgeBasePage() {
             {isAdmin ? " Updated monthly by admins." : " View-only for team members."}
           </p>
         </div>
-        {isAdmin && !showNewForm && (
-          <Button size="sm" className="shrink-0 gap-2" onClick={() => setShowNewForm(true)}>
-            <Plus className="h-4 w-4" />
-            New Article
-          </Button>
+        {isAdmin && !showNewForm && !showUploadForm && (
+          <div className="flex shrink-0 gap-2">
+            <Button size="sm" variant="outline" className="gap-2" onClick={() => setShowUploadForm(true)}>
+              <Upload className="h-4 w-4" />
+              Upload Document
+            </Button>
+            <Button size="sm" className="gap-2" onClick={() => setShowNewForm(true)}>
+              <Plus className="h-4 w-4" />
+              New Article
+            </Button>
+          </div>
         )}
       </div>
+
+      {showUploadForm && <UploadDocumentForm onCancel={() => setShowUploadForm(false)} />}
 
       {showNewForm && (
         <ArticleForm

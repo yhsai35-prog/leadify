@@ -17,6 +17,7 @@ import { companyIntelligenceRepository } from "../../repositories/companyIntelli
 import { emailsRepository } from "../../repositories/emailsRepository.js";
 import { activitiesRepository } from "../../repositories/activitiesRepository.js";
 import { outreachService } from "../outreach/outreachService.js";
+import { knowledgeBaseContextService } from "../knowledgeBase/knowledgeBaseContextService.js";
 import { aiUsageRepository } from "../../repositories/aiUsageRepository.js";
 import { logger } from "../../config/logger.js";
 import { formatToolSummary } from "./formatToolSummary.js";
@@ -211,6 +212,15 @@ async function executeTool(name: string, input: Record<string, unknown>, user: A
       if (!lead?.contactId) return { error: "This lead has no contact to draft outreach for" };
       const email = await outreachService.generateEmail(lead.id, lead.contactId, "initial", "professional", user.id);
       return { emailId: email.id, subject: email.subject, status: email.status, note: "Draft created. It still requires approval before it can be sent." };
+    }
+    case "search_knowledge_base": {
+      const articles = await knowledgeBaseContextService.getRelevantArticles(
+        user.organizationId,
+        input.query as string,
+        (input.limit as number) ?? 5,
+      );
+      if (articles.length === 0) return { error: "No matching knowledge base content found" };
+      return articles;
     }
     default:
       return { error: `Unknown tool: ${name}` };

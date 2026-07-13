@@ -35,6 +35,7 @@ export function buildOutreachPrompt(
   similarClientName: string | null,
   similarityReason: string | null,
   tone: string,
+  knowledgeBaseContext = "",
 ): { system: string; userPrompt: string } {
   const userPrompt = `## Recipient
 
@@ -49,7 +50,11 @@ ${score ? `ICP Score: ${score.icpScore}/100\nPain points identified: ${score.pai
 ## Similar Existing ${org.name} Client
 
 ${similarClientName ? `${similarClientName} -- ${similarityReason ?? "no reason provided"}` : "No similar client identified yet."}
-
+${
+  knowledgeBaseContext
+    ? `\n## Relevant Knowledge Base Content\n\nUse this tenant-provided content (products, services, case studies, FAQs) to make specific, truthful claims -- never state a fact not present here or in the context above.\n\n${knowledgeBaseContext}\n`
+    : ""
+}
 ## Tone
 
 ${tone}

@@ -47,7 +47,7 @@ export const StaggeredMenu = ({
   displaySocials = true,
   displayItemNumbering = true,
   className,
-  logoUrl = "/favicon.svg",
+  logoUrl = "/leadify-logo.png",
   menuButtonColor = "#fff",
   openMenuButtonColor = "#fff",
   accentColor = "#5227FF",
@@ -416,12 +416,12 @@ export const StaggeredMenu = ({
       <header className="staggered-menu-header" aria-label="Main navigation header">
         <a href="#top" className="sm-logo" aria-label="Leadify home">
           <img
-            src={logoUrl || "/favicon.svg"}
+            src={logoUrl || "/leadify-logo.png"}
             alt="Leadify"
             className="sm-logo-img"
             draggable={false}
-            width={110}
-            height={24}
+            width={40}
+            height={40}
           />
         </a>
         <button

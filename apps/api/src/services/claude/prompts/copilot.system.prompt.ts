@@ -34,6 +34,7 @@ ${EXISTING_CLIENT_NAMES}
 - "Why did this company score X?" → explain_score (requires lead ID from analyze_company or search_leads)
 - "Find companies like Blue Dart" → find_similar_to_client
 - Draft outreach → generate_email_draft (creates approval-queue draft only)
+- Questions about ${org.name}'s own products, services, pricing, policies, FAQs, or case studies → search_knowledge_base BEFORE answering from general knowledge; if it returns nothing relevant, say so rather than guessing
 
 Imported leads default to priority "medium" and icpScore null until qualified.
 Industry filters match flexibly (e.g. "logistics" matches "logistics & supply chain").
@@ -127,6 +128,19 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
       type: "object",
       properties: { leadId: { type: "string" } },
       required: ["leadId"],
+    },
+  },
+  {
+    name: "search_knowledge_base",
+    description:
+      "Search this organization's knowledge base (product/service descriptions, policies, FAQs, case studies) for content relevant to a question. Use this before answering questions about what the organization sells or how it operates.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The question or topic to search the knowledge base for" },
+        limit: { type: "number", default: 5 },
+      },
+      required: ["query"],
     },
   },
 ];

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
-import { Building2, CalendarClock, ImageIcon, Plus, Upload, Users as UsersIcon } from "lucide-react";
-import type { DemoRequest, TenantSummary } from "@bluwheelz/shared";
+import { Building2, CalendarClock, ImageIcon, Plus, Trash2, Upload, Users as UsersIcon } from "lucide-react";
+import type { DemoRequest, TenantSummary, TenantUserInput } from "@bluwheelz/shared";
+import { UserRole } from "@bluwheelz/shared";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,6 +33,12 @@ const DEMO_STATUS_VARIANT: Record<DemoRequest["status"], "default" | "secondary"
   closed: "outline",
 };
 
+type TenantUserRow = TenantUserInput & { key: string };
+
+function makeEmptyUserRow(role: TenantUserInput["role"] = UserRole.ADMIN): TenantUserRow {
+  return { key: crypto.randomUUID(), email: "", fullName: "", role };
+}
+
 function CreateTenantDialog() {
   const createTenant = useCreateTenant();
   const uploadLogo = useUploadTenantLogo();
@@ -40,21 +47,37 @@ function CreateTenantDialog() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [companyProfile, setCompanyProfile] = useState("");
-  const [adminEmail, setAdminEmail] = useState("");
-  const [adminFullName, setAdminFullName] = useState("");
+  const [userRows, setUserRows] = useState<TenantUserRow[]>([makeEmptyUserRow()]);
   const [logoFile, setLogoFile] = useState<File | null>(null);
 
   const reset = () => {
     setName("");
     setCompanyProfile("");
-    setAdminEmail("");
-    setAdminFullName("");
+    setUserRows([makeEmptyUserRow()]);
     setLogoFile(null);
   };
 
+  function updateRow(key: string, patch: Partial<TenantUserInput>) {
+    setUserRows((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
+  function removeRow(key: string) {
+    setUserRows((rows) => (rows.length > 1 ? rows.filter((r) => r.key !== key) : rows));
+  }
+
+  const validRows = userRows.filter((r) => r.email.trim() && r.fullName.trim());
+  const hasAdmin = validRows.some((r) => r.role === UserRole.ADMIN);
+  const canSubmit = !!name.trim() && validRows.length === userRows.length && validRows.length > 0 && hasAdmin;
+
   const handleCreate = () => {
+    const users: TenantUserInput[] = userRows.map(({ email, fullName, role }) => ({
+      email: email.trim(),
+      fullName: fullName.trim(),
+      role,
+    }));
+
     createTenant.mutate(
-      { name, companyProfile: companyProfile || undefined, adminEmail, adminFullName },
+      { name, companyProfile: companyProfile || undefined, users },
       {
         onSuccess: (result) => {
           if (logoFile) {
@@ -63,10 +86,15 @@ function CreateTenantDialog() {
               { onError: (err) => toast({ title: "Tenant created, but logo upload failed", description: err.message, variant: "error" }) },
             );
           }
+          const invitedCount = result.users.filter((u) => u.status === "invited").length;
+          const failed = result.users.filter((u) => u.status === "failed");
           toast({
             title: `${name} created`,
-            description: `${adminEmail} will receive an invite email to set up the first admin account.`,
-            variant: "success",
+            description:
+              failed.length > 0
+                ? `${invitedCount} of ${result.users.length} user(s) invited. Failed: ${failed.map((u) => u.email).join(", ")}.`
+                : `${invitedCount} user(s) will receive an invite email to set up their account.`,
+            variant: failed.length > 0 ? "error" : "success",
           });
           setOpen(false);
           reset();
@@ -77,13 +105,19 @@ function CreateTenantDialog() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
       <DialogTrigger asChild>
         <Button className="gap-2">
           <Plus className="h-4 w-4" /> New tenant
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Create a tenant</DialogTitle>
         </DialogHeader>
@@ -103,12 +137,56 @@ function CreateTenantDialog() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="tenant-admin-name">First admin — full name</Label>
-            <Input id="tenant-admin-name" value={adminFullName} onChange={(e) => setAdminFullName(e.target.value)} placeholder="Jane Doe" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="tenant-admin-email">First admin — email</Label>
-            <Input id="tenant-admin-email" type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="jane@acme.com" />
+            <Label>Users to invite</Label>
+            <p className="text-xs text-muted-foreground">Add each teammate's email and role. At least one must be an Admin.</p>
+            <div className="space-y-2">
+              {userRows.map((row) => (
+                <div key={row.key} className="flex items-center gap-2">
+                  <Input
+                    className="flex-1"
+                    placeholder="Full name"
+                    value={row.fullName}
+                    onChange={(e) => updateRow(row.key, { fullName: e.target.value })}
+                  />
+                  <Input
+                    className="flex-1"
+                    type="email"
+                    placeholder="email@acme.com"
+                    value={row.email}
+                    onChange={(e) => updateRow(row.key, { email: e.target.value })}
+                  />
+                  <Select value={row.role} onValueChange={(next) => updateRow(row.key, { role: next as TenantUserInput["role"] })}>
+                    <SelectTrigger className="w-[110px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UserRole.ADMIN}>Admin</SelectItem>
+                      <SelectItem value={UserRole.USER}>User</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                    disabled={userRows.length === 1}
+                    onClick={() => removeRow(row.key)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => setUserRows((rows) => [...rows, makeEmptyUserRow(UserRole.USER)])}
+            >
+              <Plus className="h-3.5 w-3.5" /> Add user
+            </Button>
+            {!hasAdmin && <p className="text-xs text-amber-600">At least one user must have the Admin role.</p>}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="tenant-logo">Logo (optional)</Label>
@@ -121,7 +199,7 @@ function CreateTenantDialog() {
           </div>
         </div>
         <DialogFooter>
-          <Button disabled={!name || !adminEmail || !adminFullName || createTenant.isPending} onClick={handleCreate}>
+          <Button disabled={!canSubmit || createTenant.isPending} onClick={handleCreate}>
             {createTenant.isPending ? "Creating..." : "Create tenant"}
           </Button>
         </DialogFooter>

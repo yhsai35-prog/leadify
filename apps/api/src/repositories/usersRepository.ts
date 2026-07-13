@@ -10,6 +10,16 @@ export const usersRepository = {
     return data ? toCamel<User>(data) : null;
   },
 
+  async findByEmail(email: string): Promise<User | null> {
+    const { data, error } = await supabaseAdmin
+      .from("users")
+      .select("*")
+      .ilike("email", email)
+      .maybeSingle();
+    if (error) throw ApiError.internal(error.message);
+    return data ? toCamel<User>(data) : null;
+  },
+
   async list(organizationId: string): Promise<User[]> {
     const { data, error } = await supabaseAdmin
       .from("users")

@@ -25,6 +25,7 @@ function describeFilters(input: Record<string, unknown>): string {
   if (input.search) parts.push(`company name contains "${input.search}"`);
   if (input.clientName) parts.push(`similar to client "${input.clientName}"`);
   if (input.leadId) parts.push(`lead ID ${input.leadId}`);
+  if (input.query) parts.push(`query = "${input.query}"`);
   return parts.length > 0 ? parts.join(", ") : "no filters applied";
 }
 
@@ -230,6 +231,33 @@ export function formatToolSummary(
           variant: "success",
           title: "Draft created",
           description: "Outreach draft is pending approval before it can be sent.",
+        },
+      };
+    }
+
+    case "search_knowledge_base": {
+      const articles = (Array.isArray(output) ? output : []) as { title?: string; category?: string }[];
+      if (articles.length === 0) {
+        return {
+          content: `No knowledge base content found (${filters}).`,
+          toolInput: cleanInput,
+          resultCount: 0,
+          notification: {
+            variant: "info",
+            title: "No knowledge base matches",
+            description: `Nothing in the knowledge base matched "${input.query ?? ""}". Answer from general knowledge if appropriate, or suggest adding this to the knowledge base.`,
+          },
+        };
+      }
+      const lines = articles.map((a) => `• ${a.title ?? "Untitled"} (${a.category ?? "General"})`);
+      return {
+        content: `Searched the knowledge base for "${input.query ?? ""}". Found:\n${lines.join("\n")}`,
+        toolInput: cleanInput,
+        resultCount: articles.length,
+        notification: {
+          variant: "success",
+          title: "Searched the knowledge base",
+          description: `Found ${articles.length} relevant article(s) for "${input.query ?? ""}".`,
         },
       };
     }

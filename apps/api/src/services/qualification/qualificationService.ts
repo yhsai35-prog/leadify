@@ -7,6 +7,7 @@ import { leadScoresRepository } from "../../repositories/leadScoresRepository.js
 import { leadsRepository } from "../../repositories/leadsRepository.js";
 import { activitiesRepository } from "../../repositories/activitiesRepository.js";
 import { getOrgIdentity } from "../organizations/orgIdentityService.js";
+import { knowledgeBaseContextService } from "../knowledgeBase/knowledgeBaseContextService.js";
 import { ApiError } from "../../utils/errors.js";
 
 export const qualificationService = {
@@ -25,8 +26,17 @@ export const qualificationService = {
 
     const similarSummaries = await this.buildSimilaritySummaries(company);
     const orgIdentity = await getOrgIdentity(lead.organizationId);
+    const kbArticles = await knowledgeBaseContextService.getRelevantArticles(
+      lead.organizationId,
+      `${company.name} ${company.industry ?? ""}`.trim(),
+    );
 
-    const { system, userPrompt } = buildQualificationPrompt(orgIdentity, company, similarSummaries);
+    const { system, userPrompt } = buildQualificationPrompt(
+      orgIdentity,
+      company,
+      similarSummaries,
+      knowledgeBaseContextService.formatForPrompt(kbArticles),
+    );
     const { result, promptHash } = await callClaudeStructured({
       model: env.CLAUDE_MODEL_QUALIFICATION,
       system,

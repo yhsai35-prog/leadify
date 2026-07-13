@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { UserRole } from "../enums/index.js";
 
 export const icpWeightsSchema = z.object({
   industry: z.number().min(0).max(100),
@@ -34,13 +35,32 @@ export interface Organization {
 // Multi-tenancy (super admin tenant management)
 // ---------------------------------------------------------------------------
 
-export const createTenantSchema = z.object({
-  name: z.string().min(1).max(120),
-  companyProfile: z.string().max(4000).optional(),
-  adminEmail: z.string().email(),
-  adminFullName: z.string().min(1).max(120),
+export const tenantUserInputSchema = z.object({
+  email: z.string().email(),
+  fullName: z.string().min(1).max(120),
+  role: z.enum([UserRole.ADMIN, UserRole.USER]),
 });
+export type TenantUserInput = z.infer<typeof tenantUserInputSchema>;
+
+export const createTenantSchema = z
+  .object({
+    name: z.string().min(1).max(120),
+    companyProfile: z.string().max(4000).optional(),
+    users: z.array(tenantUserInputSchema).min(1, "Add at least one user"),
+  })
+  .refine((data) => data.users.some((u) => u.role === UserRole.ADMIN), {
+    message: "At least one user must have the Admin role",
+    path: ["users"],
+  });
 export type CreateTenantInput = z.infer<typeof createTenantSchema>;
+
+export interface TenantUserInviteResult {
+  email: string;
+  fullName: string;
+  role: TenantUserInput["role"];
+  status: "invited" | "failed";
+  error?: string;
+}
 
 export const updateTenantSchema = z.object({
   name: z.string().min(1).max(120).optional(),

@@ -54,6 +54,7 @@ export function buildQualificationPrompt(
   org: OrgIdentity,
   company: Company,
   similarClientSummaries: string[],
+  knowledgeBaseContext = "",
 ): { system: string; userPrompt: string } {
   const userPrompt = `## Ideal Customer Profile Criteria
 
@@ -76,7 +77,11 @@ Additional metadata: ${JSON.stringify(company.metadata ?? {})}
 ## Reference: Existing ${org.name} Clients (for similarity dimension)
 
 ${similarClientSummaries.length > 0 ? similarClientSummaries.join("\n") : "No similarity matches available yet."}
-
+${
+  knowledgeBaseContext
+    ? `\n## Relevant Knowledge Base Content\n\nUse this tenant-provided content (products, services, case studies, FAQs) to ground pain points and reasoning in real capabilities -- do not invent claims beyond it.\n\n${knowledgeBaseContext}\n`
+    : ""
+}
 Return your qualification using the qualify_company tool.`;
 
   return { system: buildSystemPrompt(org), userPrompt };

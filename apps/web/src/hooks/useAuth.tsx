@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import type { AuthenticatedUser } from "@bluwheelz/shared";
 import { supabase } from "@/lib/supabaseClient";
@@ -8,7 +8,8 @@ interface AuthContextValue {
   session: Session | null;
   user: AuthenticatedUser | null;
   isLoading: boolean;
-  signInWithPassword: (email: string, password: string) => Promise<void>;
+  /** Re-fetches the current user (e.g. after a tenant logo upload) so branding updates without a full page reload. */
+  refreshUser: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -32,28 +33,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.subscription.unsubscribe();
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const res = await apiClient.get<{ data: AuthenticatedUser }>("/auth/me");
+      setUser(res.data);
+    } catch {
+      setUser(null);
+    }
+  }, []);
+
   useEffect(() => {
     if (!session) {
       setUser(null);
       return;
     }
-    apiClient
-      .get<{ data: AuthenticatedUser }>("/auth/me")
-      .then((res) => setUser(res.data))
-      .catch(() => setUser(null));
-  }, [session]);
-
-  const signInWithPassword = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  };
+    void refreshUser();
+  }, [session, refreshUser]);
 
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, isLoading, signInWithPassword, signOut }}>
+    <AuthContext.Provider value={{ session, user, isLoading, refreshUser, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -10,6 +10,7 @@ import { similarityRepository } from "../../repositories/similarityRepository.js
 import { leadsRepository } from "../../repositories/leadsRepository.js";
 import { activitiesRepository } from "../../repositories/activitiesRepository.js";
 import { getOrgIdentity } from "../organizations/orgIdentityService.js";
+import { knowledgeBaseContextService } from "../knowledgeBase/knowledgeBaseContextService.js";
 import { ApiError } from "../../utils/errors.js";
 
 export const outreachService = {
@@ -40,6 +41,10 @@ export const outreachService = {
 
     const topMatch = matches[0] ?? null;
     const orgIdentity = await getOrgIdentity(lead.organizationId);
+    const kbArticles = await knowledgeBaseContextService.getRelevantArticles(
+      lead.organizationId,
+      `${company.name} ${company.industry ?? ""}`.trim(),
+    );
 
     const { system, userPrompt } = buildOutreachPrompt(
       orgIdentity,
@@ -49,6 +54,7 @@ export const outreachService = {
       topMatch?.existingClientName ?? null,
       topMatch?.reason ?? null,
       tone,
+      knowledgeBaseContextService.formatForPrompt(kbArticles),
     );
 
     const { result, promptHash } = await callClaudeStructured({

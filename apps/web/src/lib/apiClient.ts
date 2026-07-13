@@ -58,6 +58,36 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+/**
+ * Multipart upload variant: omits the JSON Content-Type header so the
+ * browser can set its own `multipart/form-data; boundary=...`.
+ */
+async function requestForm<T>(path: string, formData: FormData): Promise<T> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+
+  const response = await fetch(`${API_URL}/v1${path}`, {
+    method: "POST",
+    cache: "no-store",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const errorBody = body as ApiErrorBody | null;
+    throw new ApiClientError(
+      response.status,
+      errorBody?.error?.code ?? "UNKNOWN_ERROR",
+      errorBody?.error?.message ?? "Something went wrong. Please try again.",
+      errorBody?.error?.details,
+    );
+  }
+
+  return body as T;
+}
+
 export const apiClient = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
@@ -65,4 +95,5 @@ export const apiClient = {
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "DELETE", body: body ? JSON.stringify(body) : undefined }),
+  postForm: <T>(path: string, formData: FormData) => requestForm<T>(path, formData),
 };

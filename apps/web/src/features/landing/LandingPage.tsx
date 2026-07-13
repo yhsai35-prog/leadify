@@ -259,7 +259,7 @@ export function LandingPage() {
         socialItems={SOCIAL_ITEMS}
         displaySocials
         displayItemNumbering
-        logoUrl="/leadify-logo.svg"
+        logoUrl="/leadify-logo.png"
         menuButtonColor="#f4f2ff"
         openMenuButtonColor="#08070d"
         changeMenuColorOnOpen
@@ -285,9 +285,9 @@ export function LandingPage() {
             <a href="#book-a-demo" className="landing-btn landing-btn--primary">
               Book a demo <ArrowRight size={17} />
             </a>
-            <a href="#features" className="landing-btn landing-btn--ghost">
-              Explore the platform
-            </a>
+            <Link to="/login" className="landing-btn landing-btn--ghost">
+              Sign in
+            </Link>
           </div>
         </div>
       </header>
@@ -410,8 +410,7 @@ export function LandingPage() {
 
       <footer className="landing-footer">
         <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", fontWeight: 650, color: "var(--landing-text)" }}>
-          <LeadifyMark className="h-6 w-6" />
-          Leadify
+          <LeadifyMark className="h-10 w-10" />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
           <a href="#features">Features</a>

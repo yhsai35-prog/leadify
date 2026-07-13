@@ -21,6 +21,26 @@ export function useCreateArticle() {
   });
 }
 
+export interface UploadKnowledgeBaseFileInput {
+  file: File;
+  category: string;
+  title?: string;
+}
+
+export function useUploadKnowledgeBaseFile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, category, title }: UploadKnowledgeBaseFileInput) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", category);
+      if (title) formData.append("title", title);
+      return apiClient.postForm<{ data: KnowledgeBaseArticle }>("/knowledge-base/upload", formData).then((r) => r.data);
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: QK }),
+  });
+}
+
 export function useUpdateArticle(id: string) {
   const qc = useQueryClient();
   return useMutation({

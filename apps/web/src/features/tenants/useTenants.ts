@@ -4,6 +4,7 @@ import type {
   DemoRequest,
   Organization,
   TenantSummary,
+  TenantUserInviteResult,
   UpdateTenantInput,
   User,
 } from "@bluwheelz/shared";
@@ -21,7 +22,9 @@ export function useCreateTenant() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateTenantInput) =>
-      apiClient.post<{ data: { tenant: Organization; adminUserId: string } }>("/tenants", input).then((r) => r.data),
+      apiClient
+        .post<{ data: { tenant: Organization; users: TenantUserInviteResult[] } }>("/tenants", input)
+        .then((r) => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tenants"] }),
   });
 }

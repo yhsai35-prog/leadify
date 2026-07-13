@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { ImageIcon, Save, Settings as SettingsIcon, Upload } from "lucide-react";
+import { UserRole } from "@bluwheelz/shared";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { useAuth } from "@/hooks/useAuth";
 import { useOrganization, useUpdateOrganization, useUploadOrgLogo } from "./useOrganization";
 
 const ICP_WEIGHT_FIELDS: Array<{ key: "industry" | "size" | "operations" | "growth" | "similarity"; label: string }> = [
@@ -17,6 +19,8 @@ const ICP_WEIGHT_FIELDS: Array<{ key: "industry" | "size" | "operations" | "grow
 ];
 
 export function SettingsPage() {
+  const { user, refreshUser } = useAuth();
+  const isPlatformOperator = user?.role === UserRole.SUPER_ADMIN;
   const { data: organization, isLoading } = useOrganization();
   const updateOrganization = useUpdateOrganization();
   const uploadLogo = useUploadOrgLogo();
@@ -45,7 +49,10 @@ export function SettingsPage() {
   const handleLogoChange = (file: File | undefined) => {
     if (!file) return;
     uploadLogo.mutate(file, {
-      onSuccess: () => toast({ title: "Logo updated", description: "Refresh to see it across the app.", variant: "success" }),
+      onSuccess: () => {
+        toast({ title: "Logo updated", description: "Your new logo now appears across the app.", variant: "success" });
+        void refreshUser();
+      },
       onError: (err) => toast({ title: "Failed to upload logo", description: err.message, variant: "error" }),
     });
   };
@@ -74,52 +81,54 @@ export function SettingsPage() {
         <p className="text-sm text-muted-foreground">Loading...</p>
       ) : (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Organization</CardTitle>
-              <CardDescription>Displayed across the platform and in outbound email signatures.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="max-w-sm space-y-1.5">
-                <Label htmlFor="org-name">Organization name</Label>
-                <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} />
-              </div>
-              <div className="max-w-xl space-y-1.5">
-                <Label htmlFor="org-profile">Company profile</Label>
-                <Textarea
-                  id="org-profile"
-                  rows={3}
-                  value={companyProfile}
-                  onChange={(e) => setCompanyProfile(e.target.value)}
-                  placeholder="What does your company sell? This description is used by the AI when qualifying leads and drafting outreach."
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Logo</Label>
-                <div className="flex items-center gap-4">
-                  {organization?.logoUrl ? (
-                    <img src={organization.logoUrl} alt="Organization logo" className="h-14 w-14 rounded-md border border-border object-contain" />
-                  ) : (
-                    <div className="flex h-14 w-14 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground">
-                      <ImageIcon className="h-6 w-6" />
-                    </div>
-                  )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                    className="hidden"
-                    onChange={(e) => handleLogoChange(e.target.files?.[0])}
-                  />
-                  <Button variant="outline" className="gap-2" disabled={uploadLogo.isPending} onClick={() => fileInputRef.current?.click()}>
-                    <Upload className="h-4 w-4" />
-                    {uploadLogo.isPending ? "Uploading..." : "Upload logo"}
-                  </Button>
+          {!isPlatformOperator && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Organization</CardTitle>
+                <CardDescription>Displayed across the platform and in outbound email signatures.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="max-w-sm space-y-1.5">
+                  <Label htmlFor="org-name">Organization name</Label>
+                  <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
-                <p className="text-xs text-muted-foreground">PNG, JPG, SVG, or WebP. Max 2MB. Shown in the sidebar and top bar for your team.</p>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="max-w-xl space-y-1.5">
+                  <Label htmlFor="org-profile">Company profile</Label>
+                  <Textarea
+                    id="org-profile"
+                    rows={3}
+                    value={companyProfile}
+                    onChange={(e) => setCompanyProfile(e.target.value)}
+                    placeholder="What does your company sell? This description is used by the AI when qualifying leads and drafting outreach."
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Logo</Label>
+                  <div className="flex items-center gap-4">
+                    {organization?.logoUrl ? (
+                      <img src={organization.logoUrl} alt="Organization logo" className="h-14 w-14 rounded-md border border-border object-contain" />
+                    ) : (
+                      <div className="flex h-14 w-14 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground">
+                        <ImageIcon className="h-6 w-6" />
+                      </div>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                      className="hidden"
+                      onChange={(e) => handleLogoChange(e.target.files?.[0])}
+                    />
+                    <Button variant="outline" className="gap-2" disabled={uploadLogo.isPending} onClick={() => fileInputRef.current?.click()}>
+                      <Upload className="h-4 w-4" />
+                      {uploadLogo.isPending ? "Uploading..." : "Upload logo"}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">PNG, JPG, SVG, or WebP. Max 2MB. Shown in the sidebar and top bar for your team.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

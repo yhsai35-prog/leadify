@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { UserRole } from "@bluwheelz/shared";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { TenantBrand } from "@/components/TenantBrand";
+import { LeadifyMark, TenantBrand } from "@/components/TenantBrand";
 import { NotificationsDropdown } from "@/features/notifications/NotificationsDropdown";
 import { useTheme } from "@/stores/theme";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,15 +14,24 @@ export function TopBar() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   // Super admins are platform operators — never surface a tenant org name.
-  const brandName = user?.role === UserRole.SUPER_ADMIN ? "Leadify" : user?.organizationName || "Leadify";
+  const isPlatformOperator = user?.role === UserRole.SUPER_ADMIN;
+  const brandName = isPlatformOperator ? "Leadify" : user?.organizationName || "Leadify";
+  const tenantLogoUrl = isPlatformOperator ? null : (user?.organizationLogoUrl ?? null);
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-background px-6">
       <div className="flex items-center gap-3">
         <TenantBrand variant="compact" className="md:hidden" />
-        <div className="hidden md:block">
-          <span className="font-semibold tracking-tight">{brandName}</span>
-          <span className="ml-2 text-sm text-muted-foreground">AI Sales Intelligence Platform</span>
+        <div className="hidden items-center gap-3 md:flex">
+          {tenantLogoUrl ? (
+            <>
+              <img src={tenantLogoUrl} alt="" className="h-8 w-8 rounded-md object-contain" />
+              <span className="font-semibold tracking-tight">{brandName}</span>
+            </>
+          ) : (
+            <LeadifyMark className="h-9 w-9" />
+          )}
+          <span className="text-sm text-muted-foreground">AI Sales Intelligence Platform</span>
         </div>
       </div>
       <div className="flex items-center gap-2">
