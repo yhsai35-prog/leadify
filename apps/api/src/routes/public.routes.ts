@@ -42,10 +42,24 @@ const otpRateLimit = rateLimit({
  */
 async function sendOtpIfEligible(email: string): Promise<void> {
   const user = await usersRepository.findByEmail(email);
-  if (!user || !user.isActive) return;
+  if (!user || !user.isActive) {
+    logger.info({ email }, "OTP request ignored: no active user for this email");
+    return;
+  }
 
   const org = await organizationsRepository.findById(user.organizationId);
-  if (org && org.isActive === false && user.role !== "super_admin") return;
+  if (org && org.isActive === false && user.role !== "super_admin") {
+    logger.info({ email, organizationId: user.organizationId }, "OTP request ignored: organization is disabled");
+    return;
+  }
+
+  if (!mailerService.isConfigured()) {
+    logger.error(
+      { email },
+      "OTP email skipped: SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS on Render.",
+    );
+    return;
+  }
 
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({ type: "magiclink", email });
   if (error || !data) {
@@ -60,7 +74,11 @@ async function sendOtpIfEligible(email: string): Promise<void> {
     `Your Leadify sign-in code is ${code}. Enter all ${code.length} digits on the sign-in page. It expires in 1 hour. If you did not request this, you can ignore this email.`,
     `<p>Your Leadify sign-in code is <strong style="font-size:1.4em;letter-spacing:3px">${code}</strong>.</p><p>Enter all <strong>${code.length} digits</strong> on the sign-in page. It expires in 1 hour. If you did not request this, you can ignore this email.</p>`,
   );
-  if (!sent) logger.warn({ email }, "OTP email was not sent (SMTP not configured or send failed)");
+  if (!sent) {
+    logger.error({ email }, "OTP email failed to send via SMTP");
+  } else {
+    logger.info({ email }, "OTP email handed to SMTP");
+  }
 }
 
 export const publicRouter = Router();
