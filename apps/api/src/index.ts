@@ -13,6 +13,7 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { standardRateLimit } from "./middleware/rateLimit.js";
 import { startJobProcessorLoop } from "./jobs/jobProcessor.js";
 import { reminderService } from "./services/reminders/reminderService.js";
+import { mailerService } from "./services/mailer/mailerService.js";
 
 const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist");
 const serveWeb = env.NODE_ENV === "production" && fs.existsSync(webDist);
@@ -60,7 +61,12 @@ app.use(
 
 app.use("/v1", standardRateLimit, apiRouter);
 
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
+app.get("/health", (_req, res) =>
+  res.json({
+    status: "ok",
+    smtpConfigured: mailerService.isConfigured(),
+  }),
+);
 
 if (serveWeb) {
   app.use(express.static(webDist));
