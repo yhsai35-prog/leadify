@@ -8,6 +8,7 @@ import { usersRepository } from "../repositories/usersRepository.js";
 import { organizationsRepository } from "../repositories/organizationsRepository.js";
 import { notificationsRepository } from "../repositories/notificationsRepository.js";
 import { supabaseAdmin } from "../config/supabase.js";
+import { mailerService } from "../services/mailer/mailerService.js";
 import { logger } from "../config/logger.js";
 
 /** Unauthenticated landing-page endpoints. Aggressively rate limited by IP. */
@@ -39,9 +40,9 @@ const otpRateLimit = rateLimit({
  * response is already sent so the response timing can't be used to probe
  * which emails have an account (account-enumeration protection).
  *
- * OTP email is sent by Supabase Auth over HTTPS (Render free blocks SMTP).
- * For a numeric code (not a magic link), the Magic Link email template in
- * Supabase must include {{ .Token }} — see apps/api/.env.example.
+ * We generate the OTP via Supabase Admin generateLink (no email sent by
+ * Supabase). Delivery is our mailer: Resend HTTPS on Render, or SMTP locally.
+ * Render free blocks outbound SMTP, so production needs RESEND_API_KEY.
  */
 async function sendOtpIfEligible(email: string): Promise<void> {
   const user = await usersRepository.findByEmail(email);
@@ -56,16 +57,33 @@ async function sendOtpIfEligible(email: string): Promise<void> {
     return;
   }
 
-  // Invite-only: never create Auth users from the public login form.
-  const { error } = await supabaseAdmin.auth.signInWithOtp({
-    email,
-    options: { shouldCreateUser: false },
-  });
-  if (error) {
-    logger.warn({ err: error, email }, "Failed to send OTP via Supabase Auth");
+  if (!mailerService.isConfigured()) {
+    logger.error(
+      { email, provider: mailerService.provider() },
+      "OTP email skipped: set RESEND_API_KEY on Render (free tier), or SMTP_* for local dev",
+    );
     return;
   }
-  logger.info({ email }, "OTP email requested via Supabase Auth");
+
+  // Generates email_otp without sending mail — we deliver the code ourselves.
+  const { data, error } = await supabaseAdmin.auth.admin.generateLink({ type: "magiclink", email });
+  if (error || !data) {
+    logger.warn({ err: error, email }, "Failed to generate OTP code");
+    return;
+  }
+
+  const code = data.properties.email_otp;
+  const sent = await mailerService.send(
+    email,
+    "Your Leadify sign-in code",
+    `Your Leadify sign-in code is ${code}. Enter all ${code.length} digits on the sign-in page. It expires in 1 hour. If you did not request this, you can ignore this email.`,
+    `<p>Your Leadify sign-in code is <strong style="font-size:1.4em;letter-spacing:3px">${code}</strong>.</p><p>Enter all <strong>${code.length} digits</strong> on the sign-in page. It expires in 1 hour. If you did not request this, you can ignore this email.</p>`,
+  );
+  if (!sent) {
+    logger.error({ email, provider: mailerService.provider() }, "OTP email failed to send");
+  } else {
+    logger.info({ email, provider: mailerService.provider() }, "OTP email sent");
+  }
 }
 
 export const publicRouter = Router();

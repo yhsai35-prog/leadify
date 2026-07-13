@@ -61,7 +61,11 @@ const envSchema = z.object({
 
   INTERNAL_SERVICE_KEY: z.string().min(16),
 
-  // Platform-level SMTP for transactional mail (OTP + reminders).
+  // Prefer Resend (HTTPS) for OTP on Render free — SMTP ports are blocked there.
+  RESEND_API_KEY: z.preprocess(stripWrappingQuotes, z.string().optional()),
+  RESEND_FROM: z.preprocess(stripWrappingQuotes, z.string().optional()),
+
+  // SMTP for local transactional mail (OTP + reminders). Blocked on Render free.
   SMTP_HOST: z.preprocess(stripWrappingQuotes, z.string().optional()),
   SMTP_PORT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
   SMTP_USER: z.preprocess(stripWrappingQuotes, z.string().optional()),

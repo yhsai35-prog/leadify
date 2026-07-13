@@ -11,8 +11,8 @@ import { apiClient } from "@/lib/apiClient";
 import { supabase } from "@/lib/supabaseClient";
 
 const RESEND_COOLDOWN_SECONDS = 30;
-/** Supabase `{{ .Token }}` email OTP is 6 digits by default. */
-const OTP_LENGTH = 6;
+/** generateLink({ type: "magiclink" }) email_otp length for this project. */
+const OTP_LENGTH = 8;
 
 export function LoginPage() {
   const { session } = useAuth();
@@ -77,11 +77,11 @@ export function LoginPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      // Must match supabase.auth.signInWithOtp on the API (email OTP, not magiclink).
+      // Must match generateLink({ type: "magiclink" }) on the API.
       const { error: verifyError } = await supabase.auth.verifyOtp({
         email,
         token: code,
-        type: "email",
+        type: "magiclink",
       });
       if (verifyError) throw verifyError;
       // onAuthStateChange in useAuth picks up the resulting session automatically.

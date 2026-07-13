@@ -64,7 +64,8 @@ app.use("/v1", standardRateLimit, apiRouter);
 app.get("/health", (_req, res) =>
   res.json({
     status: "ok",
-    smtpConfigured: mailerService.isConfigured(),
+    mailConfigured: mailerService.isConfigured(),
+    mailProvider: mailerService.provider(),
   }),
 );
 
@@ -81,10 +82,11 @@ app.use(errorHandler);
 
 app.listen(env.PORT, () => {
   logger.info(`Leadify API listening on port ${env.PORT} (${env.NODE_ENV})`);
-  if (env.SMTP_HOST && env.SMTP_PORT && env.SMTP_USER && env.SMTP_PASS) {
-    logger.info({ host: env.SMTP_HOST, port: env.SMTP_PORT, user: env.SMTP_USER }, "SMTP configured for OTP / transactional mail");
+  const provider = mailerService.provider();
+  if (provider === "none") {
+    logger.warn("No mail provider — set RESEND_API_KEY (Render) or SMTP_* (local) for OTP emails");
   } else {
-    logger.warn("SMTP not fully configured — OTP emails will not be sent until SMTP_HOST/PORT/USER/PASS are set");
+    logger.info({ provider }, "Transactional mail configured for OTP / reminders");
   }
 });
 
