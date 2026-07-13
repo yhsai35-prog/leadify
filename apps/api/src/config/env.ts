@@ -3,13 +3,21 @@ import { z } from "zod";
 
 dotenv.config({ override: true });
 
+/** Treat blank env strings as unset so defaults / platform-injected values still apply. */
+function emptyToUndefined(value: unknown): unknown {
+  if (value === "" || value === null || value === undefined) return undefined;
+  return value;
+}
+
 /**
  * Fails fast at boot if required configuration is missing, instead of
  * surfacing cryptic runtime errors the first time a service tries to use an
  * undefined credential.
  */
 const envSchema = z.object({
-  PORT: z.coerce.number().int().default(4000),
+  // Render injects PORT; an empty PORT= in the dashboard would otherwise coerce to 0
+  // (OS picks a random port → endless "Detected a new open port" restarts).
+  PORT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(4000)),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   API_BASE_URL: z.string().url(),
   WEB_APP_URL: z.string().url(),
@@ -43,7 +51,7 @@ const envSchema = z.object({
   // optional: when unset, reminder emails are skipped and only in-app
   // notifications are created.
   SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().int().optional(),
+  SMTP_PORT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
