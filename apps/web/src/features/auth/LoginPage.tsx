@@ -14,18 +14,22 @@ const RESEND_COOLDOWN_SECONDS = 30;
 /** generateLink({ type: "magiclink" }) email_otp length for this project. */
 const OTP_LENGTH = 8;
 
+/** password: email + password. otp-email: request a code. otp-code: enter the code. */
+type Mode = "password" | "otp-email" | "otp-code";
+
 export function LoginPage() {
   const { session } = useAuth();
   const [ready, setReady] = useState(false);
-  const [step, setStep] = useState<"email" | "code">("email");
+  const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const cooldownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Always clear any leftover session so Sign in never skips the OTP form.
+  // Always clear any leftover session so Sign in never skips this form.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -57,11 +61,26 @@ export function LoginPage() {
     setIsSubmitting(true);
     try {
       await apiClient.post("/public/auth/otp/request", { email });
-      setStep("code");
+      setMode("otp-code");
       setCode("");
       startCooldown();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send sign-in code");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePasswordSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+      // onAuthStateChange in useAuth picks up the resulting session automatically.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid email or password");
     } finally {
       setIsSubmitting(false);
     }
@@ -92,7 +111,14 @@ export function LoginPage() {
     }
   };
 
-  // Only redirect after a successful OTP — never from a leftover password session.
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setError(null);
+    setPassword("");
+    setCode("");
+  };
+
+  // Only redirect after a successful sign-in — never from a leftover session.
   if (ready && session) return <Navigate to="/dashboard" replace />;
 
   return (
@@ -104,16 +130,18 @@ export function LoginPage() {
           <CardDescription>
             {!ready
               ? "Preparing sign-in..."
-              : step === "email"
-                ? "Sign in with your work email. We'll send you a one-time code. New accounts are invite-only."
-                : `Enter the ${OTP_LENGTH}-digit code sent to ${email}.`}
+              : mode === "password"
+                ? "Sign in with your work email and password."
+                : mode === "otp-email"
+                  ? "Sign in with your work email. We'll send you a one-time code."
+                  : `Enter the ${OTP_LENGTH}-digit code sent to ${email}.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!ready ? (
             <p className="text-center text-sm text-muted-foreground">Clearing previous session...</p>
-          ) : step === "email" ? (
-            <form onSubmit={handleEmailSubmit} className="space-y-4">
+          ) : mode === "password" ? (
+            <form onSubmit={handlePasswordSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -126,10 +154,59 @@ export function LoginPage() {
                   placeholder="you@company.com"
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button type="submit" className="w-full" disabled={isSubmitting || !email.trim() || !password}>
+                {isSubmitting ? "Signing in..." : "Sign in"}
+              </Button>
+              <div className="text-center text-sm">
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => switchMode("otp-email")}
+                >
+                  Sign in with an email code instead
+                </button>
+              </div>
+            </form>
+          ) : mode === "otp-email" ? (
+            <form onSubmit={handleEmailSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="otp-email">Email</Label>
+                <Input
+                  id="otp-email"
+                  type="email"
+                  required
+                  autoFocus
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@company.com"
+                />
+              </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
               <Button type="submit" className="w-full" disabled={isSubmitting || !email.trim()}>
                 {isSubmitting ? "Sending code..." : "Send sign-in code"}
               </Button>
+              <div className="text-center text-sm">
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => switchMode("password")}
+                >
+                  Sign in with a password instead
+                </button>
+              </div>
             </form>
           ) : (
             <form onSubmit={handleCodeSubmit} className="space-y-4">
@@ -157,11 +234,7 @@ export function LoginPage() {
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    setStep("email");
-                    setCode("");
-                    setError(null);
-                  }}
+                  onClick={() => switchMode("otp-email")}
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
                   Change email

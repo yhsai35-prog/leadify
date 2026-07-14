@@ -41,8 +41,9 @@ const otpRateLimit = rateLimit({
  * which emails have an account (account-enumeration protection).
  *
  * We generate the OTP via Supabase Admin generateLink (no email sent by
- * Supabase). Delivery is our mailer: Resend HTTPS on Render, or SMTP locally.
- * Render free blocks outbound SMTP, so production needs RESEND_API_KEY.
+ * Supabase) and deliver it ourselves over SMTP (see mailerService). If SMTP
+ * is unavailable or blocked by the host, users can still sign in with their
+ * password via the LoginPage password/OTP toggle.
  */
 async function sendOtpIfEligible(email: string): Promise<void> {
   const user = await usersRepository.findByEmail(email);
@@ -59,8 +60,8 @@ async function sendOtpIfEligible(email: string): Promise<void> {
 
   if (!mailerService.isConfigured()) {
     logger.error(
-      { email, provider: mailerService.provider() },
-      "OTP email skipped: set RESEND_API_KEY on Render (free tier), or SMTP_* for local dev",
+      { email },
+      "OTP email skipped: SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS.",
     );
     return;
   }
@@ -80,9 +81,9 @@ async function sendOtpIfEligible(email: string): Promise<void> {
     `<p>Your Leadify sign-in code is <strong style="font-size:1.4em;letter-spacing:3px">${code}</strong>.</p><p>Enter all <strong>${code.length} digits</strong> on the sign-in page. It expires in 1 hour. If you did not request this, you can ignore this email.</p>`,
   );
   if (!sent) {
-    logger.error({ email, provider: mailerService.provider() }, "OTP email failed to send");
+    logger.error({ email }, "OTP email failed to send via SMTP");
   } else {
-    logger.info({ email, provider: mailerService.provider() }, "OTP email sent");
+    logger.info({ email }, "OTP email handed to SMTP");
   }
 }
 

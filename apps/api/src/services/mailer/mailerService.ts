@@ -6,10 +6,9 @@ import { logger } from "../../config/logger.js";
 let transporter: Transporter | null | undefined;
 
 /**
- * Transactional mailer for OTP + reminder nudges.
- *
- * Prefer Resend (HTTPS) in production: Render free web services block outbound
- * SMTP ports 25/465/587. SMTP remains available for local development.
+ * SMTP transactional mailer for OTP + reminder nudges. Configured via
+ * optional SMTP_* env vars; when absent, sends are skipped silently so the
+ * in-app notification remains the source of truth.
  */
 function getTransporter(): Transporter | null {
   if (transporter !== undefined) return transporter;
@@ -26,58 +25,20 @@ function getTransporter(): Transporter | null {
   return transporter;
 }
 
-function resendFrom(): string {
-  return env.RESEND_FROM ?? env.SMTP_FROM ?? "Leadify <onboarding@resend.dev>";
-}
-
-async function sendViaResend(to: string, subject: string, text: string, html?: string): Promise<void> {
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: resendFrom(),
-      to: [to],
-      subject,
-      text,
-      ...(html ? { html } : {}),
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Resend ${res.status}: ${body}`);
-  }
-}
-
 export const mailerService = {
-  /** True when either Resend or SMTP can deliver mail. */
   isConfigured(): boolean {
-    return Boolean(env.RESEND_API_KEY) || getTransporter() !== null;
+    return getTransporter() !== null;
   },
 
-  provider(): "resend" | "smtp" | "none" {
-    if (env.RESEND_API_KEY) return "resend";
-    if (getTransporter()) return "smtp";
-    return "none";
+  provider(): "smtp" | "none" {
+    return getTransporter() ? "smtp" : "none";
   },
 
-  /** Returns true if the email was handed off successfully. */
+  /** Returns true if the email was handed to the SMTP server, false if skipped/failed. */
   async send(to: string, subject: string, text: string, html?: string): Promise<boolean> {
-    if (env.RESEND_API_KEY) {
-      try {
-        await sendViaResend(to, subject, text, html);
-        return true;
-      } catch (err) {
-        logger.warn({ err, to, subject }, "Transactional email send failed (Resend)");
-        return false;
-      }
-    }
-
     const transport = getTransporter();
     if (!transport) {
-      logger.debug({ to, subject }, "No mail provider configured; skipping transactional email");
+      logger.debug({ to, subject }, "SMTP not configured; skipping transactional email");
       return false;
     }
     try {
