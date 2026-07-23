@@ -35,6 +35,8 @@ import { apiClient } from "@/lib/apiClient";
 import { cn, titleCase } from "@/lib/utils";
 import { usePipelineBoard } from "@/features/pipeline/usePipeline";
 import { CampaignFlowCanvas } from "./flow/CampaignFlowCanvas";
+import { RecipientsPanel } from "./RecipientsPanel";
+import { ConversationHistoryPanel } from "./ConversationHistoryPanel";
 import {
   CAMPAIGN_STATUSES,
   useAddLeadsToCampaign,
@@ -124,7 +126,7 @@ export function CampaignDetailPage() {
   const [leadSearch, setLeadSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<PipelineStatus | "all">("all");
   const [contactFilter, setContactFilter] = useState<"all" | "has_contact" | "no_contact">("all");
-  const [tab, setTab] = useState<"flow" | "leads" | "activity">("flow");
+  const [tab, setTab] = useState<"flow" | "recipients" | "leads" | "activity">("flow");
   const queryClient = useQueryClient();
 
   const templatesQuery = useQuery({
@@ -167,20 +169,35 @@ export function CampaignDetailPage() {
     if (!detail || !channelStats) return null;
     let contactsReadyToGenerate = 0;
     let contactsMissingIdentity = 0;
-    for (const lead of detail.leads) {
-      for (const c of lead.companyContacts) {
-        const identity = isWhatsapp ? c.phone : c.email;
-        const status = isWhatsapp ? c.latestWhatsappStatus : c.latestEmailStatus;
-        if (identity) {
-          if (!status || !ACTIVE_EMAIL.has(status)) contactsReadyToGenerate += 1;
-        } else {
-          contactsMissingIdentity += 1;
+    let selectedRecipients = 0;
+
+    if (isWhatsapp) {
+      const recipients = detail.recipients ?? [];
+      selectedRecipients = recipients.filter((r) => r.selected && r.phone).length;
+      contactsMissingIdentity = recipients.filter((r) => !r.phone).length;
+      for (const r of recipients) {
+        if (!r.selected || !r.phone) continue;
+        const lead = detail.leads.find((l) => l.leadId === r.leadId);
+        const contact = lead?.companyContacts.find((c) => c.contactId === r.contactId);
+        const status = contact?.latestWhatsappStatus;
+        if (!status || !ACTIVE_EMAIL.has(status)) contactsReadyToGenerate += 1;
+      }
+    } else {
+      for (const lead of detail.leads) {
+        for (const c of lead.companyContacts) {
+          if (c.email) {
+            if (!c.latestEmailStatus || !ACTIVE_EMAIL.has(c.latestEmailStatus)) contactsReadyToGenerate += 1;
+          } else {
+            contactsMissingIdentity += 1;
+          }
         }
       }
     }
+
     return {
       contactsReadyToGenerate,
       contactsMissingIdentity,
+      selectedRecipients,
       drafts: channelStats.draft,
       pending: channelStats.pendingApproval,
       sent: channelStats.sent,
@@ -290,7 +307,7 @@ export function CampaignDetailPage() {
       </div>
 
       <div className="flex gap-1 rounded-lg border border-border bg-muted/40 p-1 w-fit">
-        {(["flow", "leads", "activity"] as const).map((key) => (
+        {(["flow", "recipients", "leads", "activity"] as const).map((key) => (
           <button
             key={key}
             type="button"
@@ -323,6 +340,27 @@ export function CampaignDetailPage() {
         />
       )}
 
+      {tab === "recipients" && (
+        <RecipientsPanel
+          campaignId={id!}
+          channel={campaign.channel === "whatsapp" ? "whatsapp" : "email"}
+          recipients={detail.recipients ?? []}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {tab === "activity" &&
+        (campaign.channel === "whatsapp" ? (
+          <ConversationHistoryPanel campaignId={id!} />
+        ) : (
+          <Card>
+            <CardContent className="pt-6 text-sm text-muted-foreground">
+              Email send history lives in Approval Queue and each lead&apos;s activity feed. Switch the campaign channel to
+              WhatsApp to use the delivery timeline (sent / delivered / read).
+            </CardContent>
+          </Card>
+        ))}
+
       <Card>
         <CardContent className="flex flex-wrap items-center gap-2 pt-6">
           {workflowSteps.map((step, i) => (
@@ -348,8 +386,16 @@ export function CampaignDetailPage() {
             <CardTitle className="text-base">Readiness</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
+            {campaign.channel === "whatsapp" && (
+              <p>
+                <span className="font-medium">{readiness.selectedRecipients}</span> phone numbers selected on Recipients
+              </p>
+            )}
             <p>
               <span className="font-medium">{readiness.contactsReadyToGenerate}</span> contacts ready to generate
+              {campaign.channel === "whatsapp" && readiness.selectedRecipients === 0 && (
+                <span className="text-muted-foreground"> — open the Recipients tab and select numbers</span>
+              )}
             </p>
             {readiness.contactsMissingIdentity > 0 && (
               <p className="text-muted-foreground">
@@ -370,7 +416,7 @@ export function CampaignDetailPage() {
             )}
             <p className="text-xs text-muted-foreground">
               {campaign.channel === "whatsapp"
-                ? "WhatsApp messages send via Meta Cloud API when approved."
+                ? "WhatsApp messages send via Meta Cloud API when approved. Delivery/read events appear under Activity when the webhook is connected."
                 : "Emails send when approved in Approval Center (Gmail/SMTP)."}
             </p>
           </CardContent>
@@ -482,16 +528,20 @@ export function CampaignDetailPage() {
               className="gap-2"
               disabled={(readiness?.contactsReadyToGenerate ?? 0) === 0 || generateEmails.isPending}
               onClick={() =>
-                generateEmails.mutate(undefined, {
+                generateEmails.mutate(
+                  {},
+                  {
                   onSuccess: (res) => {
                     setLastBatchResult(res.data);
                     batchToast(toast, isWhatsapp ? "WhatsApp drafts generated" : "Emails generated", res.data);
                   },
                   onError: (err) => toast({ title: "Generation failed", description: err.message, variant: "error" }),
-                })
+                },
+                )
               }
             >
-              <Sparkles className="h-4 w-4" /> Generate all
+              <Sparkles className="h-4 w-4" />{" "}
+              {isWhatsapp ? "Generate for selected" : "Generate all"}
             </Button>
 
             <Button

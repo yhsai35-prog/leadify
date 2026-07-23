@@ -144,6 +144,8 @@ Fill generate_whatsapp_outreach.`;
       templateLanguage: input.templateLanguage,
       templateComponents: components,
       bodyPreview: result.bodyPreview,
+      toPhone: contact.phone,
+      deliveryStatus: "pending",
       status: "draft",
       generatedBy: "ai",
       modelVersion: env.CLAUDE_MODEL_OUTREACH,
@@ -155,7 +157,13 @@ Fill generate_whatsapp_outreach.`;
       leadId: input.leadId,
       userId: input.userId,
       type: "draft_created",
-      payload: { whatsappMessageId: message.id, channel: "whatsapp", templateName: input.templateName },
+      payload: {
+        whatsappMessageId: message.id,
+        channel: "whatsapp",
+        templateName: input.templateName,
+        toPhone: contact.phone,
+        bodyPreview: result.bodyPreview,
+      },
     });
 
     if (lead.pipelineStatus === "imported" || lead.pipelineStatus === "qualified" || lead.pipelineStatus === "research_complete") {

@@ -60,6 +60,16 @@ export const contactsRepository = {
     return toCamel<Contact>(data);
   },
 
+  async listByCompanyWithPhone(companyId: string): Promise<Contact[]> {
+    const { data, error } = await supabaseAdmin
+      .from("contacts")
+      .select("*")
+      .eq("company_id", companyId)
+      .not("phone", "is", null);
+    if (error) throw ApiError.internal(error.message);
+    return toCamel<Contact[]>(data ?? []);
+  },
+
   async update(id: string, input: Partial<Contact>): Promise<Contact> {
     const row = toSnake(input);
     const { data, error } = await supabaseAdmin.from("contacts").update(row).eq("id", id).select("*").single();

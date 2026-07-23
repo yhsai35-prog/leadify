@@ -43,8 +43,45 @@ export const campaignsController = {
       req.user!.organizationId,
       req.params.id as string,
       req.user!.id,
+      req.body ?? {},
     );
     res.json({ data: result });
+  }),
+
+  setRecipients: asyncHandler(async (req: Request, res: Response) => {
+    const recipients = await campaignService.setRecipients(
+      req.user!.organizationId,
+      req.params.id as string,
+      req.body,
+    );
+    res.json({ data: recipients });
+  }),
+
+  updateRecipient: asyncHandler(async (req: Request, res: Response) => {
+    const recipient = await campaignService.updateRecipientSelected(
+      req.user!.organizationId,
+      req.params.id as string,
+      req.params.contactId as string,
+      Boolean(req.body.selected),
+    );
+    res.json({ data: recipient });
+  }),
+
+  addManualRecipient: asyncHandler(async (req: Request, res: Response) => {
+    const recipients = await campaignService.addManualRecipient(
+      req.user!.organizationId,
+      req.params.id as string,
+      req.body,
+    );
+    res.status(201).json({ data: recipients });
+  }),
+
+  conversationHistory: asyncHandler(async (req: Request, res: Response) => {
+    const history = await campaignService.getConversationHistory(
+      req.user!.organizationId,
+      req.params.id as string,
+    );
+    res.json({ data: history });
   }),
 
   submitAll: asyncHandler(async (req: Request, res: Response) => {

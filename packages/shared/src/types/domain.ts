@@ -217,6 +217,10 @@ export interface WhatsappMessage {
   templateComponents: unknown[];
   bodyPreview: string;
   status: EmailStatus;
+  deliveryStatus: string;
+  toPhone: string | null;
+  deliveredAt: string | null;
+  readAt: string | null;
   generatedBy: GeneratedBy;
   modelVersion?: string | null;
   promptHash?: string | null;
@@ -230,6 +234,32 @@ export interface WhatsappMessage {
   createdBy?: string | null;
   createdAt: string;
   contact?: Contact;
+}
+
+export interface WhatsappMessageEvent {
+  id: string;
+  whatsappMessageId: string;
+  leadId: string;
+  campaignId: string | null;
+  eventType: string;
+  bodyText: string | null;
+  detail: Record<string, unknown>;
+  occurredAt: string;
+  createdAt: string;
+}
+
+export interface CampaignRecipient {
+  id: string;
+  campaignId: string;
+  leadId: string;
+  contactId: string;
+  phone: string | null;
+  email: string | null;
+  selected: boolean;
+  createdAt: string;
+  contactName?: string | null;
+  companyName?: string | null;
+  leadPipelineStatus?: PipelineStatus | null;
 }
 
 export interface WhatsappTemplate {
@@ -299,6 +329,7 @@ export interface CampaignDetail {
   pipelineBreakdown: Record<string, number>;
   emailStats: CampaignEmailStats;
   whatsappStats: CampaignEmailStats;
+  recipients: CampaignRecipient[];
 }
 
 export interface CampaignBatchResult {

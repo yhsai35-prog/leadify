@@ -82,6 +82,16 @@ export const whatsappMessagesRepository = {
     return toCamel<WhatsappMessage[]>(data ?? []);
   },
 
+  async listByCampaign(campaignId: string): Promise<WhatsappMessage[]> {
+    const { data, error } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select("*, contact:contacts(*)")
+      .eq("campaign_id", campaignId)
+      .order("created_at", { ascending: false });
+    if (error) throw ApiError.internal(error.message);
+    return toCamel<WhatsappMessage[]>(data ?? []);
+  },
+
   latestStatusByLeadIds(messages: WhatsappMessage[]): Map<string, string> {
     const map = new Map<string, string>();
     for (const msg of messages) {

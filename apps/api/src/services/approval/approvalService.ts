@@ -12,9 +12,11 @@ import { n8nService } from "../n8n/n8nService.js";
 import { pipelineService } from "../pipeline/pipelineService.js";
 import { reminderService } from "../reminders/reminderService.js";
 import { metaWhatsAppClient } from "../whatsapp/metaWhatsAppClient.js";
+import { whatsappMessageEventsRepository } from "../../repositories/whatsappMessageEventsRepository.js";
 import { ApiError } from "../../utils/errors.js";
 import { requireOwnSubmissionOrAdmin } from "../../middleware/rbac.js";
 import { logger } from "../../config/logger.js";
+import { normalizeWhatsAppPhone } from "../whatsapp/metaWhatsAppClient.js";
 
 export interface ApprovalDecisionResult {
   approval: ApprovalQueueItem;
@@ -336,6 +338,7 @@ export const approvalService = {
       throw ApiError.invariantViolation("The contact for this WhatsApp message has no phone on file");
     }
 
+    const toPhone = normalizeWhatsAppPhone(contact.phone);
     const components = (message.templateComponents ?? []) as Array<{
       type: "header" | "body" | "button";
       parameters?: Array<{ type: "text"; text: string }>;
@@ -354,8 +357,24 @@ export const approvalService = {
         status: "sent",
         sentAt,
         waMessageId: messageId,
+        toPhone,
+        deliveryStatus: "accepted",
       });
       await pipelineService.transitionToSentFromWebhook(message.leadId);
+      await whatsappMessageEventsRepository.create({
+        whatsappMessageId: message.id,
+        leadId: message.leadId,
+        campaignId: message.campaignId,
+        eventType: "accepted",
+        bodyText: message.bodyPreview,
+        detail: {
+          waMessageId: messageId,
+          toPhone,
+          templateName: message.templateName,
+          templateLanguage: message.templateLanguage,
+        },
+        occurredAt: sentAt,
+      });
       await activitiesRepository.log({
         leadId: message.leadId,
         userId: message.approvedBy,
@@ -365,19 +384,31 @@ export const approvalService = {
           waMessageId: messageId,
           templateName: message.templateName,
           bodyPreview: message.bodyPreview,
+          toPhone,
+          deliveryStatus: "accepted",
           sentAt,
         },
       });
     } catch (err) {
       await whatsappMessagesRepository.update(whatsappMessageId, {
         status: "failed",
+        deliveryStatus: "failed",
+        toPhone,
         errorPayload: { message: err instanceof Error ? err.message : "Send failed" },
+      });
+      await whatsappMessageEventsRepository.create({
+        whatsappMessageId: message.id,
+        leadId: message.leadId,
+        campaignId: message.campaignId,
+        eventType: "failed",
+        bodyText: message.bodyPreview,
+        detail: { error: err instanceof Error ? err.message : String(err), toPhone },
       });
       await activitiesRepository.log({
         leadId: message.leadId,
         userId: null,
         type: "send_failed",
-        payload: { whatsappMessageId: message.id, channel: "whatsapp", error: String(err) },
+        payload: { whatsappMessageId: message.id, channel: "whatsapp", error: String(err), toPhone },
       });
       throw err;
     }

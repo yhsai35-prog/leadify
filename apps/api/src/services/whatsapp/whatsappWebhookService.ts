@@ -1,6 +1,7 @@
 import { env } from "../../config/env.js";
 import { activitiesRepository } from "../../repositories/activitiesRepository.js";
 import { whatsappMessagesRepository } from "../../repositories/whatsappMessagesRepository.js";
+import { whatsappMessageEventsRepository } from "../../repositories/whatsappMessageEventsRepository.js";
 import { supabaseAdmin } from "../../config/supabase.js";
 import { callClaudeStructured } from "../claude/client.js";
 import {
@@ -96,15 +97,30 @@ export const whatsappWebhookService = {
     status: string;
     errors?: unknown[];
     conversation?: { id?: string };
+    timestamp?: string;
   }): Promise<void> {
     const message = await whatsappMessagesRepository.findByWaMessageId(status.id);
     if (!message) return;
 
+    const occurredAt = status.timestamp
+      ? new Date(Number(status.timestamp) * 1000).toISOString()
+      : new Date().toISOString();
+
     if (status.status === "failed") {
       await whatsappMessagesRepository.update(message.id, {
         status: "failed",
+        deliveryStatus: "failed",
         errorPayload: { errors: status.errors ?? [] },
         waConversationId: status.conversation?.id ?? message.waConversationId ?? null,
+      });
+      await whatsappMessageEventsRepository.create({
+        whatsappMessageId: message.id,
+        leadId: message.leadId,
+        campaignId: message.campaignId,
+        eventType: "failed",
+        bodyText: message.bodyPreview,
+        detail: { errors: status.errors ?? [], waMessageId: status.id },
+        occurredAt,
       });
       await activitiesRepository.log({
         leadId: message.leadId,
@@ -115,9 +131,29 @@ export const whatsappWebhookService = {
       return;
     }
 
-    if (status.status === "delivered" || status.status === "read" || status.status === "sent") {
-      await whatsappMessagesRepository.update(message.id, {
+    if (status.status === "sent" || status.status === "delivered" || status.status === "read") {
+      const patch: Record<string, unknown> = {
+        deliveryStatus: status.status,
         waConversationId: status.conversation?.id ?? message.waConversationId ?? null,
+      };
+      if (status.status === "delivered") patch.deliveredAt = occurredAt;
+      if (status.status === "read") {
+        patch.readAt = occurredAt;
+        if (!message.deliveredAt) patch.deliveredAt = occurredAt;
+      }
+      await whatsappMessagesRepository.update(message.id, patch);
+      await whatsappMessageEventsRepository.create({
+        whatsappMessageId: message.id,
+        leadId: message.leadId,
+        campaignId: message.campaignId,
+        eventType: status.status,
+        bodyText: message.bodyPreview,
+        detail: {
+          waMessageId: status.id,
+          toPhone: message.toPhone,
+          conversationId: status.conversation?.id,
+        },
+        occurredAt,
       });
     }
   },
@@ -192,6 +228,20 @@ export const whatsappWebhookService = {
         ? new Date(Number(message.timestamp) * 1000).toISOString()
         : new Date().toISOString(),
     });
+
+    if (outbound) {
+      await whatsappMessageEventsRepository.create({
+        whatsappMessageId: outbound.id,
+        leadId,
+        campaignId: outbound.campaignId,
+        eventType: "reply",
+        bodyText,
+        detail: { fromPhone, sentiment, waMessageId: message.id },
+        occurredAt: message.timestamp
+          ? new Date(Number(message.timestamp) * 1000).toISOString()
+          : new Date().toISOString(),
+      });
+    }
 
     await activitiesRepository.log({
       leadId,

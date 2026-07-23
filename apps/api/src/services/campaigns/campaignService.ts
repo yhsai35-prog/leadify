@@ -1,24 +1,36 @@
 import type {
+  AddManualCampaignRecipientInput,
   Campaign,
   CampaignBatchResult,
   CampaignDetail,
+  CampaignRecipient,
   CreateCampaignInput,
+  GenerateCampaignOutreachInput,
   LaunchCampaignInput,
+  SetCampaignRecipientsInput,
   UpdateCampaignInput,
+  WhatsappMessage,
+  WhatsappMessageEvent,
 } from "@bluwheelz/shared";
 import { CampaignChannel, campaignFlowDefinitionSchema, validateCampaignFlowForLaunch } from "@bluwheelz/shared";
 import { campaignsRepository } from "../../repositories/campaignsRepository.js";
+import { campaignRecipientsRepository } from "../../repositories/campaignRecipientsRepository.js";
+import { companiesRepository } from "../../repositories/companiesRepository.js";
 import { contactsRepository } from "../../repositories/contactsRepository.js";
 import { emailsRepository } from "../../repositories/emailsRepository.js";
 import { leadsRepository } from "../../repositories/leadsRepository.js";
 import { whatsappMessagesRepository } from "../../repositories/whatsappMessagesRepository.js";
+import { whatsappMessageEventsRepository } from "../../repositories/whatsappMessageEventsRepository.js";
 import { approvalService } from "../approval/approvalService.js";
 import { outreachService } from "../outreach/outreachService.js";
+import { normalizeWhatsAppPhone } from "../whatsapp/metaWhatsAppClient.js";
 import { whatsappOutreachService } from "../whatsapp/whatsappOutreachService.js";
 import { ApiError } from "../../utils/errors.js";
 import { extractFlowMessageConfig, resolveCreateFlowDefinition } from "./defaultFlows.js";
 
 const ACTIVE_STATUSES = new Set(["draft", "pending_approval", "approved", "scheduled", "sent"]);
+const MANUAL_TEST_COMPANY_DOMAIN = "whatsapp-test.local";
+const MANUAL_TEST_COMPANY_NAME = "WhatsApp Test Numbers";
 
 function contactName(contact: { firstName: string; lastName: string | null }) {
   return [contact.firstName, contact.lastName].filter(Boolean).join(" ") || "Unknown";
@@ -31,6 +43,49 @@ async function assertCampaignInOrg(organizationId: string, campaignId: string): 
     throw ApiError.forbidden("Campaign not in your organization");
   }
   return campaign;
+}
+
+async function syncRecipientsFromLeads(campaign: Campaign, leadIds: string[]): Promise<void> {
+  if (leadIds.length === 0) return;
+  const leads = await Promise.all(leadIds.map((id) => leadsRepository.findById(id)));
+  const companyIds = [...new Set(leads.filter(Boolean).map((l) => l!.companyId))];
+  const contacts = await contactsRepository.listByCompanyIds(companyIds);
+  const byCompany = new Map<string, typeof contacts>();
+  for (const c of contacts) {
+    const list = byCompany.get(c.companyId) ?? [];
+    list.push(c);
+    byCompany.set(c.companyId, list);
+  }
+
+  const rows: Array<{
+    campaignId: string;
+    leadId: string;
+    contactId: string;
+    phone?: string | null;
+    email?: string | null;
+    selected: boolean;
+  }> = [];
+
+  for (const lead of leads) {
+    if (!lead) continue;
+    for (const contact of byCompany.get(lead.companyId) ?? []) {
+      const hasChannelIdentity =
+        campaign.channel === CampaignChannel.WHATSAPP ? Boolean(contact.phone) : Boolean(contact.email);
+      if (!hasChannelIdentity && campaign.channel === CampaignChannel.WHATSAPP && !contact.phone) {
+        // Still list contacts without phone so user can see them as unselected/disabled via UI
+      }
+      rows.push({
+        campaignId: campaign.id,
+        leadId: lead.id,
+        contactId: contact.id,
+        phone: contact.phone,
+        email: contact.email,
+        selected: hasChannelIdentity,
+      });
+    }
+  }
+
+  await campaignRecipientsRepository.upsertMany(rows);
 }
 
 export const campaignService = {
@@ -77,7 +132,8 @@ export const campaignService = {
       emailsRepository.listByLeadIds(leadIds),
       whatsappMessagesRepository.listByLeadIds(leadIds),
     ]);
-    const latestWaStatus = whatsappMessagesRepository.latestStatusByLeadIds(allWa);    const contactStatusMap = emailsRepository.buildContactStatusMap(allEmails);
+    const latestWaStatus = whatsappMessagesRepository.latestStatusByLeadIds(allWa);
+    const contactStatusMap = emailsRepository.buildContactStatusMap(allEmails);
     const waContactStatusMap = whatsappMessagesRepository.buildContactStatusMap(allWa);
     const companyIds = [...new Set(leads.map((l) => l.companyId))];
     const allContacts = await contactsRepository.listByCompanyIds(companyIds);
@@ -86,6 +142,23 @@ export const campaignService = {
       const list = contactsByCompany.get(contact.companyId) ?? [];
       list.push(contact);
       contactsByCompany.set(contact.companyId, list);
+    }
+
+    let recipients: CampaignRecipient[] = [];
+    try {
+      recipients = await campaignRecipientsRepository.listByCampaign(id);
+      if (recipients.length === 0 && leads.length > 0) {
+        await syncRecipientsFromLeads(campaign, leadIds);
+        recipients = await campaignRecipientsRepository.listByCampaign(id);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/campaign_recipients|schema cache|does not exist/i.test(message)) {
+        throw ApiError.badRequest(
+          "Database migration 016 is required for recipient selection. Run packages/db/migrations/016_campaign_recipients_history.sql in the Supabase SQL Editor, then retry.",
+        );
+      }
+      throw err;
     }
 
     return {
@@ -117,6 +190,7 @@ export const campaignService = {
       pipelineBreakdown,
       emailStats,
       whatsappStats,
+      recipients,
     };
   },
 
@@ -130,12 +204,13 @@ export const campaignService = {
   },
 
   async addLeads(organizationId: string, id: string, leadIds: string[]): Promise<void> {
-    await assertCampaignInOrg(organizationId, id);
+    const campaign = await assertCampaignInOrg(organizationId, id);
     const count = await leadsRepository.countInOrganization(organizationId, leadIds);
     if (count !== leadIds.length) {
       throw ApiError.badRequest("One or more leads do not belong to your organization");
     }
     await campaignsRepository.addLeads(id, leadIds);
+    await syncRecipientsFromLeads(campaign, leadIds);
   },
 
   async removeLeads(organizationId: string, id: string, leadIds: string[]): Promise<void> {
@@ -145,6 +220,184 @@ export const campaignService = {
       throw ApiError.badRequest("One or more leads do not belong to your organization");
     }
     await campaignsRepository.removeLeads(id, leadIds);
+    await campaignRecipientsRepository.removeByLeadIds(id, leadIds);
+  },
+
+  async setRecipients(
+    organizationId: string,
+    campaignId: string,
+    input: SetCampaignRecipientsInput,
+  ): Promise<CampaignRecipient[]> {
+    const campaign = await assertCampaignInOrg(organizationId, campaignId);
+    const contactIds = input.recipients.map((r) => r.contactId);
+    const contacts = await Promise.all(contactIds.map((cid) => contactsRepository.findById(cid)));
+    const byId = new Map(contacts.filter(Boolean).map((c) => [c!.id, c!]));
+
+    await campaignRecipientsRepository.upsertMany(
+      input.recipients.map((r) => {
+        const contact = byId.get(r.contactId);
+        return {
+          campaignId,
+          leadId: r.leadId,
+          contactId: r.contactId,
+          phone: contact?.phone ?? null,
+          email: contact?.email ?? null,
+          selected: r.selected,
+        };
+      }),
+    );
+
+    // Ensure channel-invalid phones aren't left selected for WhatsApp
+    if (campaign.channel === CampaignChannel.WHATSAPP) {
+      const all = await campaignRecipientsRepository.listByCampaign(campaignId);
+      for (const r of all) {
+        if (r.selected && !r.phone) {
+          await campaignRecipientsRepository.setSelected(campaignId, r.contactId, false);
+        }
+      }
+    }
+
+    return campaignRecipientsRepository.listByCampaign(campaignId);
+  },
+
+  async updateRecipientSelected(
+    organizationId: string,
+    campaignId: string,
+    contactId: string,
+    selected: boolean,
+  ): Promise<CampaignRecipient> {
+    await assertCampaignInOrg(organizationId, campaignId);
+    if (selected) {
+      const contact = await contactsRepository.findById(contactId);
+      const campaign = await campaignsRepository.findById(campaignId);
+      if (campaign?.channel === CampaignChannel.WHATSAPP && !contact?.phone) {
+        throw ApiError.badRequest("Cannot select a contact without a phone number for WhatsApp campaigns");
+      }
+    }
+    return campaignRecipientsRepository.setSelected(campaignId, contactId, selected);
+  },
+
+  async addManualRecipient(
+    organizationId: string,
+    campaignId: string,
+    input: AddManualCampaignRecipientInput,
+  ): Promise<CampaignRecipient[]> {
+    const campaign = await assertCampaignInOrg(organizationId, campaignId);
+
+    if (campaign.channel === CampaignChannel.WHATSAPP) {
+      if (!input.phone) {
+        throw ApiError.badRequest("Phone number is required for WhatsApp campaigns");
+      }
+      const digits = normalizeWhatsAppPhone(input.phone);
+      const displayPhone = `+${digits}`;
+
+      let company = await companiesRepository.findByDomain(organizationId, MANUAL_TEST_COMPANY_DOMAIN);
+      if (!company) {
+        company = await companiesRepository.create(organizationId, {
+          name: MANUAL_TEST_COMPANY_NAME,
+          domain: MANUAL_TEST_COMPANY_DOMAIN,
+          industry: "Internal testing",
+        });
+      }
+
+      const existingOnCompany = await contactsRepository.listByCompanyWithPhone(company.id);
+      let contact = existingOnCompany.find((c) => {
+        if (!c.phone) return false;
+        try {
+          return normalizeWhatsAppPhone(c.phone) === digits;
+        } catch {
+          return false;
+        }
+      });
+
+      if (!contact) {
+        const label = (input.label?.trim() || "Test").slice(0, 80);
+        contact = await contactsRepository.create({
+          companyId: company.id,
+          firstName: label,
+          lastName: "Number",
+          phone: displayPhone,
+          title: "Manual test recipient",
+          isDecisionMaker: true,
+        });
+      } else if (input.label?.trim() && contact.firstName !== input.label.trim()) {
+        contact = await contactsRepository.update(contact.id, {
+          firstName: input.label.trim().slice(0, 80),
+        });
+      }
+
+      let lead = await leadsRepository.findExistingForCompany(organizationId, company.id);
+      if (!lead) {
+        lead = await leadsRepository.create({
+          organizationId,
+          companyId: company.id,
+          contactId: contact.id,
+          pipelineStatus: "imported",
+          source: "manual",
+        });
+      }
+
+      await campaignsRepository.addLeads(campaignId, [lead.id]);
+      await syncRecipientsFromLeads(campaign, [lead.id]);
+      await campaignRecipientsRepository.setSelected(campaignId, contact.id, true);
+
+      return campaignRecipientsRepository.listByCampaign(campaignId);
+    }
+
+    if (!input.email) {
+      throw ApiError.badRequest("Email is required for email campaigns");
+    }
+
+    let company = await companiesRepository.findByDomain(organizationId, MANUAL_TEST_COMPANY_DOMAIN);
+    if (!company) {
+      company = await companiesRepository.create(organizationId, {
+        name: MANUAL_TEST_COMPANY_NAME,
+        domain: MANUAL_TEST_COMPANY_DOMAIN,
+        industry: "Internal testing",
+      });
+    }
+
+    const label = (input.label?.trim() || "Test").slice(0, 80);
+    const existing = await contactsRepository.findByCompanyAndEmail(company.id, input.email);
+    const contact =
+      existing ??
+      (await contactsRepository.create({
+        companyId: company.id,
+        firstName: label,
+        lastName: "Recipient",
+        email: input.email,
+        title: "Manual test recipient",
+        isDecisionMaker: true,
+      }));
+
+    let lead = await leadsRepository.findExistingForCompany(organizationId, company.id);
+    if (!lead) {
+      lead = await leadsRepository.create({
+        organizationId,
+        companyId: company.id,
+        contactId: contact.id,
+        pipelineStatus: "imported",
+        source: "manual",
+      });
+    }
+
+    await campaignsRepository.addLeads(campaignId, [lead.id]);
+    await syncRecipientsFromLeads(campaign, [lead.id]);
+    await campaignRecipientsRepository.setSelected(campaignId, contact.id, true);
+
+    return campaignRecipientsRepository.listByCampaign(campaignId);
+  },
+
+  async getConversationHistory(
+    organizationId: string,
+    campaignId: string,
+  ): Promise<{ messages: WhatsappMessage[]; events: WhatsappMessageEvent[] }> {
+    await assertCampaignInOrg(organizationId, campaignId);
+    const [messages, events] = await Promise.all([
+      whatsappMessagesRepository.listByCampaign(campaignId),
+      whatsappMessageEventsRepository.listByCampaign(campaignId, 200),
+    ]);
+    return { messages, events };
   },
 
   async getStatus(organizationId: string, id: string) {
@@ -157,10 +410,15 @@ export const campaignService = {
     };
   },
 
-  async generateEmails(organizationId: string, campaignId: string, userId: string): Promise<CampaignBatchResult> {
+  async generateEmails(
+    organizationId: string,
+    campaignId: string,
+    userId: string,
+    input: GenerateCampaignOutreachInput = {},
+  ): Promise<CampaignBatchResult> {
     const campaign = await assertCampaignInOrg(organizationId, campaignId);
     if (campaign.channel === CampaignChannel.WHATSAPP) {
-      return this.generateWhatsapp(organizationId, campaignId, userId);
+      return this.generateWhatsapp(organizationId, campaignId, userId, input.contactIds);
     }
 
     const leads = await campaignsRepository.listLeadsForCampaign(campaignId);
@@ -232,7 +490,12 @@ export const campaignService = {
     return result;
   },
 
-  async generateWhatsapp(organizationId: string, campaignId: string, userId: string): Promise<CampaignBatchResult> {
+  async generateWhatsapp(
+    organizationId: string,
+    campaignId: string,
+    userId: string,
+    contactIds?: string[],
+  ): Promise<CampaignBatchResult> {
     const campaign = await assertCampaignInOrg(organizationId, campaignId);
     const config = extractFlowMessageConfig(campaign.flowDefinition);
     if (!config.templateName) {
@@ -241,8 +504,31 @@ export const campaignService = {
       );
     }
 
-    const leads = await campaignsRepository.listLeadsForCampaign(campaignId);
-    const leadIds = leads.map((l) => l.id);
+    let recipients = await campaignRecipientsRepository.listByCampaign(campaignId);
+    if (recipients.length === 0) {
+      const leads = await campaignsRepository.listLeadsForCampaign(campaignId);
+      await syncRecipientsFromLeads(
+        campaign,
+        leads.map((l) => l.id),
+      );
+      recipients = await campaignRecipientsRepository.listByCampaign(campaignId);
+    }
+
+    const filterSet = contactIds && contactIds.length > 0 ? new Set(contactIds) : null;
+    const targets = recipients.filter((r) => {
+      if (!r.selected) return false;
+      if (!r.phone) return false;
+      if (filterSet && !filterSet.has(r.contactId)) return false;
+      return true;
+    });
+
+    if (targets.length === 0) {
+      throw ApiError.badRequest(
+        "No recipients selected with phone numbers. Open the Recipients tab and select numbers to message.",
+      );
+    }
+
+    const leadIds = [...new Set(targets.map((t) => t.leadId))];
     const allMessages = await whatsappMessagesRepository.listByLeadIds(leadIds);
     const byLead = new Map<string, typeof allMessages>();
     for (const msg of allMessages) {
@@ -251,60 +537,38 @@ export const campaignService = {
       byLead.set(msg.leadId, list);
     }
 
-    const companyIds = [...new Set(leads.map((l) => l.companyId))];
-    const allContacts = await contactsRepository.listByCompanyIds(companyIds);
-    const contactsByCompany = new Map<string, typeof allContacts>();
-    for (const contact of allContacts) {
-      const list = contactsByCompany.get(contact.companyId) ?? [];
-      list.push(contact);
-      contactsByCompany.set(contact.companyId, list);
-    }
-
     const result: CampaignBatchResult = { generated: 0, skipped: 0, failed: [] };
 
-    for (const lead of leads) {
-      const contactsWithPhone = (contactsByCompany.get(lead.companyId) ?? []).filter((c) => c.phone);
-      if (contactsWithPhone.length === 0) {
+    for (const target of targets) {
+      const leadMessages = byLead.get(target.leadId) ?? [];
+      const hasActive = leadMessages.some(
+        (m) => m.contactId === target.contactId && ACTIVE_STATUSES.has(m.status),
+      );
+      if (hasActive) {
         result.skipped! += 1;
-        result.failed.push({
-          leadId: lead.id,
-          name: lead.company?.name ?? undefined,
-          reason: "No contacts with phone number",
-        });
         continue;
       }
 
-      const leadMessages = byLead.get(lead.id) ?? [];
-
-      for (const contact of contactsWithPhone) {
-        const hasActive = leadMessages.some(
-          (m) => m.contactId === contact.id && ACTIVE_STATUSES.has(m.status),
-        );
-        if (hasActive) {
-          result.skipped! += 1;
-          continue;
-        }
-
-        try {
-          const message = await whatsappOutreachService.generateMessage({
-            leadId: lead.id,
-            contactId: contact.id,
-            templateName: config.templateName,
-            templateLanguage: config.templateLanguage,
-            tone: config.tone,
-            userId,
-            campaignId,
-          });
-          result.generated! += 1;
-          leadMessages.push(message);
-        } catch (err) {
-          result.failed.push({
-            leadId: lead.id,
-            contactId: contact.id,
-            name: `${contactName(contact)} (${lead.company?.name ?? "lead"})`,
-            reason: err instanceof ApiError ? err.message : "Generation failed",
-          });
-        }
+      try {
+        const message = await whatsappOutreachService.generateMessage({
+          leadId: target.leadId,
+          contactId: target.contactId,
+          templateName: config.templateName,
+          templateLanguage: config.templateLanguage,
+          tone: config.tone,
+          userId,
+          campaignId,
+        });
+        result.generated! += 1;
+        leadMessages.push(message);
+        byLead.set(target.leadId, leadMessages);
+      } catch (err) {
+        result.failed.push({
+          leadId: target.leadId,
+          contactId: target.contactId,
+          name: `${target.contactName ?? "Contact"} (${target.companyName ?? "lead"})`,
+          reason: err instanceof ApiError ? err.message : "Generation failed",
+        });
       }
     }
 
