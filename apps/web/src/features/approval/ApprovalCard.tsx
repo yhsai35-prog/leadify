@@ -129,7 +129,7 @@ export function ApprovalCard({ item }: { item: ApprovalQueueItem }) {
                 onClick={() =>
                   editApprove.mutate(
                     {
-                      id: item.id,
+                      approvalId: item.id,
                       editedContent: isWhatsapp ? { bodyPreview: editedBody } : { bodyText: editedBody },
                     },
                     {
@@ -159,7 +159,7 @@ export function ApprovalCard({ item }: { item: ApprovalQueueItem }) {
                 disabled={!rejectReason.trim() || reject.isPending}
                 onClick={() =>
                   reject.mutate(
-                    { id: item.id, reviewerNotes: rejectReason },
+                    { approvalId: item.id, reviewerNotes: rejectReason },
                     {
                       onSuccess: () => toast({ title: "Outreach rejected", variant: "info" }),
                       onError: (err) =>

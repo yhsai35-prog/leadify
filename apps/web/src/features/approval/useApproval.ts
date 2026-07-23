@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ApprovalQueueItem, Email } from "@bluwheelz/shared";
+import type { ApprovalQueueItem } from "@bluwheelz/shared";
 import { apiClient } from "@/lib/apiClient";
 
 export interface ApprovalDecisionResult {
@@ -69,7 +69,14 @@ export function useRejectEmail() {
 export function useEditAndApprove() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ approvalId, editedContent }: { approvalId: string; editedContent: Partial<Email> }) =>
+    mutationFn: ({
+      approvalId,
+      editedContent,
+    }: {
+      approvalId: string;
+      /** Email fields (bodyText, etc.) or WhatsApp fields (bodyPreview, etc.). */
+      editedContent: Record<string, unknown>;
+    }) =>
       apiClient
         .post<{ data: ApprovalDecisionResult }>(`/approval-queue/${approvalId}/edit-approve`, { editedContent })
         .then((r) => r.data),
