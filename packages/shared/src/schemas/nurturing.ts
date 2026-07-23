@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const acknowledgeOutreachSchema = z.object({
-  channel: z.enum(["email", "linkedin"]),
+  channel: z.enum(["email", "linkedin", "whatsapp"]),
   acknowledged: z.boolean(),
 });
 export type AcknowledgeOutreachInput = z.infer<typeof acknowledgeOutreachSchema>;

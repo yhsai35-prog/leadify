@@ -1,4 +1,5 @@
 import type { Campaign, CampaignEmailStats, CampaignPerformanceRow, Lead } from "@bluwheelz/shared";
+import { CampaignChannel } from "@bluwheelz/shared";
 import { supabaseAdmin } from "../config/supabase.js";
 import { toCamel, toSnake } from "../utils/caseConverter.js";
 import { ApiError } from "../utils/errors.js";
@@ -14,6 +15,14 @@ const EMPTY_EMAIL_STATS: CampaignEmailStats = {
   sent: 0,
   failed: 0,
 };
+
+function normalizeCampaign(campaign: Campaign): Campaign {
+  return {
+    ...campaign,
+    channel: campaign.channel ?? CampaignChannel.EMAIL,
+    flowDefinition: campaign.flowDefinition ?? { nodes: [], edges: [] },
+  };
+}
 
 function mapEmailStats(rows: Array<{ status: string }>): CampaignEmailStats {
   const stats = { ...EMPTY_EMAIL_STATS };
@@ -33,7 +42,7 @@ export const campaignsRepository = {
   async findById(id: string): Promise<Campaign | null> {
     const { data, error } = await supabaseAdmin.from("campaigns").select("*").eq("id", id).maybeSingle();
     if (error) throw ApiError.internal(error.message);
-    return data ? toCamel<Campaign>(data) : null;
+    return data ? normalizeCampaign(toCamel<Campaign>(data)) : null;
   },
 
   async list(organizationId: string): Promise<Campaign[]> {
@@ -44,7 +53,7 @@ export const campaignsRepository = {
       .order("created_at", { ascending: false });
     if (error) throw ApiError.internal(error.message);
     return (data ?? []).map((row: Record<string, unknown>) => ({
-      ...toCamel<Campaign>(row),
+      ...normalizeCampaign(toCamel<Campaign>(row)),
       leadCount: (row.leads as Array<{ count: number }> | undefined)?.[0]?.count ?? 0,
     }));
   },
@@ -53,14 +62,14 @@ export const campaignsRepository = {
     const row = toSnake(input);
     const { data, error } = await supabaseAdmin.from("campaigns").insert(row).select("*").single();
     if (error) throw ApiError.conflict(error.message);
-    return toCamel<Campaign>(data);
+    return normalizeCampaign(toCamel<Campaign>(data));
   },
 
   async update(id: string, input: Partial<Campaign>): Promise<Campaign> {
     const row = toSnake(input);
     const { data, error } = await supabaseAdmin.from("campaigns").update(row).eq("id", id).select("*").single();
     if (error) throw ApiError.internal(error.message);
-    return toCamel<Campaign>(data);
+    return normalizeCampaign(toCamel<Campaign>(data));
   },
 
   async addLeads(campaignId: string, leadIds: string[]): Promise<void> {
@@ -111,6 +120,21 @@ export const campaignsRepository = {
     if (leadIds.length === 0) return { ...EMPTY_EMAIL_STATS };
 
     const { data, error } = await supabaseAdmin.from("emails").select("status").in("lead_id", leadIds);
+    if (error) throw ApiError.internal(error.message);
+    return mapEmailStats((data ?? []) as Array<{ status: string }>);
+  },
+
+  async whatsappStatsForCampaign(campaignId: string): Promise<CampaignEmailStats> {
+    const { data: leads, error: leadsError } = await supabaseAdmin
+      .from("leads")
+      .select("id")
+      .eq("campaign_id", campaignId)
+      .is("deleted_at", null);
+    if (leadsError) throw ApiError.internal(leadsError.message);
+    const leadIds = (leads ?? []).map((l) => l.id as string);
+    if (leadIds.length === 0) return { ...EMPTY_EMAIL_STATS };
+
+    const { data, error } = await supabaseAdmin.from("whatsapp_messages").select("status").in("lead_id", leadIds);
     if (error) throw ApiError.internal(error.message);
     return mapEmailStats((data ?? []) as Array<{ status: string }>);
   },

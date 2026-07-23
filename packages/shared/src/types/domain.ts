@@ -1,6 +1,7 @@
 import type {
   ActivityType,
   ApprovalStatus,
+  CampaignChannel,
   CampaignStatus,
   DiscoveredLeadStatus,
   EmailStatus,
@@ -16,6 +17,7 @@ import type {
 import type { IndustryAnalysis, ScoreBreakdown } from "../schemas/qualification.js";
 import type { NewsItem } from "../schemas/intelligence.js";
 import type { PreferredEmailClient, SmtpSettings } from "../schemas/userSettings.js";
+import type { CampaignFlowDefinition } from "../schemas/campaignFlow.js";
 
 /**
  * Wire-format domain types returned by the REST API. These are the camelCase
@@ -61,6 +63,7 @@ export interface Contact {
   firstName: string;
   lastName: string | null;
   email: string | null;
+  phone: string | null;
   linkedinUrl: string | null;
   title: string | null;
   isDecisionMaker: boolean;
@@ -190,7 +193,8 @@ export interface Email {
 
 export interface ApprovalQueueItem {
   id: string;
-  emailId: string;
+  emailId: string | null;
+  whatsappMessageId: string | null;
   leadId: string;
   submittedBy: string;
   reviewerId: string | null;
@@ -199,7 +203,47 @@ export interface ApprovalQueueItem {
   decidedAt: string | null;
   createdAt: string;
   email?: Email;
+  whatsappMessage?: WhatsappMessage;
   lead?: Lead;
+}
+
+export interface WhatsappMessage {
+  id: string;
+  leadId: string;
+  contactId: string;
+  campaignId: string | null;
+  templateName: string;
+  templateLanguage: string;
+  templateComponents: unknown[];
+  bodyPreview: string;
+  status: EmailStatus;
+  generatedBy: GeneratedBy;
+  modelVersion?: string | null;
+  promptHash?: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  scheduledAt: string | null;
+  sentAt: string | null;
+  waMessageId?: string | null;
+  waConversationId?: string | null;
+  errorPayload?: Record<string, unknown> | null;
+  createdBy?: string | null;
+  createdAt: string;
+  contact?: Contact;
+}
+
+export interface WhatsappTemplate {
+  id: string;
+  organizationId: string;
+  metaId: string | null;
+  name: string;
+  language: string;
+  status: string;
+  category: string | null;
+  components: unknown[];
+  syncedAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Campaign {
@@ -208,6 +252,8 @@ export interface Campaign {
   name: string;
   description: string | null;
   status: CampaignStatus;
+  channel: CampaignChannel;
+  flowDefinition: CampaignFlowDefinition;
   scheduledAt: string | null;
   createdBy: string;
   leadCount?: number;
@@ -228,8 +274,10 @@ export interface CampaignCompanyContact {
   contactId: string;
   name: string;
   email: string | null;
+  phone: string | null;
   isPrimary: boolean;
   latestEmailStatus: string | null;
+  latestWhatsappStatus: string | null;
 }
 
 export interface CampaignLeadSummary {
@@ -237,9 +285,11 @@ export interface CampaignLeadSummary {
   companyName: string;
   pipelineStatus: PipelineStatus;
   latestEmailStatus: string | null;
+  latestWhatsappStatus: string | null;
   contactId: string | null;
   contactName: string | null;
   contactEmail: string | null;
+  contactPhone: string | null;
   companyContacts: CampaignCompanyContact[];
 }
 
@@ -248,6 +298,7 @@ export interface CampaignDetail {
   leads: CampaignLeadSummary[];
   pipelineBreakdown: Record<string, number>;
   emailStats: CampaignEmailStats;
+  whatsappStats: CampaignEmailStats;
 }
 
 export interface CampaignBatchResult {
@@ -258,6 +309,7 @@ export interface CampaignBatchResult {
   failed: Array<{
     leadId?: string;
     emailId?: string;
+    whatsappMessageId?: string;
     contactId?: string;
     name?: string;
     reason: string;
@@ -418,7 +470,7 @@ export interface DiscoveredLead {
   contactCount?: number;
 }
 
-export type OutreachChannel = "email" | "linkedin";
+export type OutreachChannel = "email" | "linkedin" | "whatsapp";
 
 export interface OutreachAcknowledgement {
   id: string;

@@ -1,11 +1,15 @@
 import { z } from "zod";
-import { CampaignStatus } from "../enums/index.js";
+import { CampaignChannel, CampaignStatus } from "../enums/index.js";
 import { uuidSchema } from "./common.js";
+import { campaignFlowDefinitionSchema } from "./campaignFlow.js";
 
 export const createCampaignSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   scheduledAt: z.string().datetime().optional(),
+  channel: z.nativeEnum(CampaignChannel).default(CampaignChannel.EMAIL),
+  flowDefinition: campaignFlowDefinitionSchema.optional(),
+  useRecommendedFlow: z.boolean().optional(),
 });
 export type CreateCampaignInput = z.infer<typeof createCampaignSchema>;
 
@@ -13,6 +17,8 @@ export const updateCampaignSchema = z.object({
   name: z.string().min(1).optional(),
   status: z.nativeEnum(CampaignStatus).optional(),
   scheduledAt: z.string().datetime().optional(),
+  channel: z.nativeEnum(CampaignChannel).optional(),
+  flowDefinition: campaignFlowDefinitionSchema.optional(),
 });
 export type UpdateCampaignInput = z.infer<typeof updateCampaignSchema>;
 

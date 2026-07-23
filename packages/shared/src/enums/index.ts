@@ -148,6 +148,12 @@ export const CampaignStatus = {
 } as const;
 export type CampaignStatus = (typeof CampaignStatus)[keyof typeof CampaignStatus];
 
+export const CampaignChannel = {
+  EMAIL: "email",
+  WHATSAPP: "whatsapp",
+} as const;
+export type CampaignChannel = (typeof CampaignChannel)[keyof typeof CampaignChannel];
+
 export const ActivityType = {
   IMPORTED: "imported",
   QUALIFIED: "qualified",
@@ -164,6 +170,8 @@ export const ActivityType = {
   NOTE: "note",
   EMAIL_ACKNOWLEDGED: "email_acknowledged",
   LINKEDIN_ACKNOWLEDGED: "linkedin_acknowledged",
+  WHATSAPP_SENT: "whatsapp_sent",
+  WHATSAPP_REPLY_RECEIVED: "whatsapp_reply_received",
 } as const;
 export type ActivityType = (typeof ActivityType)[keyof typeof ActivityType];
 

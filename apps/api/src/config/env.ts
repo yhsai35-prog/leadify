@@ -67,6 +67,13 @@ const envSchema = z.object({
   SMTP_USER: z.preprocess(stripWrappingQuotes, z.string().optional()),
   SMTP_PASS: z.preprocess(stripWrappingQuotes, z.string().optional()),
   SMTP_FROM: z.preprocess(stripWrappingQuotes, z.string().optional()),
+
+  // Meta WhatsApp Cloud API (optional until WhatsApp campaigns are used)
+  WHATSAPP_PHONE_NUMBER_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+  WHATSAPP_BUSINESS_ACCOUNT_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+  WHATSAPP_ACCESS_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
+  WHATSAPP_VERIFY_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
+  WHATSAPP_APP_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
 });
 
 function loadEnv() {

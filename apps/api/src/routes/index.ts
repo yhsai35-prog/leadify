@@ -22,6 +22,8 @@ import { tenantsRouter } from "./tenants.routes.js";
 import { publicRouter } from "./public.routes.js";
 import { userSettingsRouter } from "./userSettings.routes.js";
 import { knowledgeBaseRouter } from "./knowledgeBase.routes.js";
+import { whatsappRouter } from "./whatsapp.routes.js";
+import { whatsappWebhooksRouter } from "./whatsappWebhooks.routes.js";
 
 export const apiRouter = Router();
 
@@ -37,6 +39,8 @@ apiRouter.use("/campaigns", campaignsRouter);
 apiRouter.use("/analytics", analyticsRouter);
 apiRouter.use("/copilot", copilotRouter);
 apiRouter.use("/webhooks", webhooksRouter);
+apiRouter.use("/webhooks/whatsapp", whatsappWebhooksRouter);
+apiRouter.use("/whatsapp", whatsappRouter);
 apiRouter.use("/internal", internalRouter);
 apiRouter.use("/notifications", notificationsRouter);
 apiRouter.use("/similarity", similarityRouter);

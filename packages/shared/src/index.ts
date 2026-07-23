@@ -15,6 +15,8 @@ export * from "./schemas/intelligence.js";
 export * from "./schemas/email.js";
 export * from "./schemas/approval.js";
 export * from "./schemas/campaign.js";
+export * from "./schemas/campaignFlow.js";
+export * from "./schemas/whatsapp.js";
 export * from "./schemas/copilot.js";
 export * from "./schemas/similarity.js";
 export * from "./schemas/discoveredLead.js";

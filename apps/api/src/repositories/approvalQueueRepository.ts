@@ -4,7 +4,7 @@ import { toCamel, toSnake } from "../utils/caseConverter.js";
 import { ApiError } from "../utils/errors.js";
 
 const WITH_RELATIONS =
-  "*, email:emails(*, contact:contacts(*)), lead:leads(*, company:companies(*), contact:contacts(*))";
+  "*, email:emails(*, contact:contacts(*)), whatsapp_message:whatsapp_messages(*, contact:contacts(*)), lead:leads(*, company:companies(*), contact:contacts(*))";
 
 export const approvalQueueRepository = {
   async findById(id: string): Promise<ApprovalQueueItem | null> {
@@ -23,6 +23,16 @@ export const approvalQueueRepository = {
     return data ? toCamel<ApprovalQueueItem>(data) : null;
   },
 
+  async findByWhatsappMessageId(whatsappMessageId: string): Promise<ApprovalQueueItem | null> {
+    const { data, error } = await supabaseAdmin
+      .from("approval_queue")
+      .select(WITH_RELATIONS)
+      .eq("whatsapp_message_id", whatsappMessageId)
+      .maybeSingle();
+    if (error) throw ApiError.internal(error.message);
+    return data ? toCamel<ApprovalQueueItem>(data) : null;
+  },
+
   async listPending(): Promise<ApprovalQueueItem[]> {
     const { data, error } = await supabaseAdmin
       .from("approval_queue")
@@ -33,7 +43,7 @@ export const approvalQueueRepository = {
     return toCamel<ApprovalQueueItem[]>(data ?? []);
   },
 
-  /** Approved (or edit-approved) queue items whose email is still awaiting send. */
+  /** Approved (or edit-approved) queue items whose message is still awaiting send. */
   async listReadyToSend(): Promise<ApprovalQueueItem[]> {
     const { data, error } = await supabaseAdmin
       .from("approval_queue")
@@ -45,8 +55,18 @@ export const approvalQueueRepository = {
     return items.filter((item) => item.email?.status === "approved");
   },
 
-  async create(input: { emailId: string; leadId: string; submittedBy: string }): Promise<ApprovalQueueItem> {
-    const row = toSnake(input);
+  async create(input: {
+    emailId?: string | null;
+    whatsappMessageId?: string | null;
+    leadId: string;
+    submittedBy: string;
+  }): Promise<ApprovalQueueItem> {
+    const row = toSnake({
+      emailId: input.emailId ?? null,
+      whatsappMessageId: input.whatsappMessageId ?? null,
+      leadId: input.leadId,
+      submittedBy: input.submittedBy,
+    });
     const { data, error } = await supabaseAdmin.from("approval_queue").insert(row).select(WITH_RELATIONS).single();
     if (error) throw ApiError.conflict(error.message);
     return toCamel<ApprovalQueueItem>(data);

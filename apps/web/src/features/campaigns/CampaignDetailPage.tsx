@@ -11,8 +11,9 @@ import {
   Trash2,
   UserPlus,
 } from "lucide-react";
-import type { CampaignBatchResult, PipelineStatus } from "@bluwheelz/shared";
-import { ROLE_RANK, UserRole } from "@bluwheelz/shared";
+import type { CampaignBatchResult, CampaignFlowDefinition, PipelineStatus, WhatsappTemplate } from "@bluwheelz/shared";
+import { CampaignChannel, ROLE_RANK, UserRole } from "@bluwheelz/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,8 +31,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/hooks/useAuth";
-import { titleCase } from "@/lib/utils";
+import { apiClient } from "@/lib/apiClient";
+import { cn, titleCase } from "@/lib/utils";
 import { usePipelineBoard } from "@/features/pipeline/usePipeline";
+import { CampaignFlowCanvas } from "./flow/CampaignFlowCanvas";
 import {
   CAMPAIGN_STATUSES,
   useAddLeadsToCampaign,
@@ -121,6 +124,21 @@ export function CampaignDetailPage() {
   const [leadSearch, setLeadSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<PipelineStatus | "all">("all");
   const [contactFilter, setContactFilter] = useState<"all" | "has_contact" | "no_contact">("all");
+  const [tab, setTab] = useState<"flow" | "leads" | "activity">("flow");
+  const queryClient = useQueryClient();
+
+  const templatesQuery = useQuery({
+    queryKey: ["whatsapp-templates"],
+    queryFn: () => apiClient.get<{ data: WhatsappTemplate[] }>("/whatsapp/templates").then((r) => r.data),
+  });
+  const syncTemplates = useMutation({
+    mutationFn: () => apiClient.post<{ data: WhatsappTemplate[] }>("/whatsapp/templates/sync"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-templates"] });
+      toast({ title: "Templates synced from Meta", variant: "success" });
+    },
+    onError: (err: Error) => toast({ title: "Template sync failed", description: err.message, variant: "error" }),
+  });
 
   const availableLeads = useMemo(() => {
     if (!board) return [];
@@ -140,32 +158,34 @@ export function CampaignDetailPage() {
     });
   }, [availableLeads, leadSearch, statusFilter, contactFilter]);
 
+  const isWhatsapp = detail?.campaign.channel === CampaignChannel.WHATSAPP;
+  const channelStats = isWhatsapp
+    ? (detail?.whatsappStats ?? detail?.emailStats)
+    : detail?.emailStats;
+
   const readiness = useMemo(() => {
-    if (!detail) return null;
-    let contactsWithEmail = 0;
-    let contactsMissingEmail = 0;
+    if (!detail || !channelStats) return null;
     let contactsReadyToGenerate = 0;
+    let contactsMissingIdentity = 0;
     for (const lead of detail.leads) {
       for (const c of lead.companyContacts) {
-        if (c.email) {
-          contactsWithEmail += 1;
-          if (!c.latestEmailStatus || !ACTIVE_EMAIL.has(c.latestEmailStatus)) {
-            contactsReadyToGenerate += 1;
-          }
+        const identity = isWhatsapp ? c.phone : c.email;
+        const status = isWhatsapp ? c.latestWhatsappStatus : c.latestEmailStatus;
+        if (identity) {
+          if (!status || !ACTIVE_EMAIL.has(status)) contactsReadyToGenerate += 1;
         } else {
-          contactsMissingEmail += 1;
+          contactsMissingIdentity += 1;
         }
       }
     }
     return {
-      contactsWithEmail,
-      contactsMissingEmail,
       contactsReadyToGenerate,
-      drafts: detail.emailStats.draft,
-      pending: detail.emailStats.pendingApproval,
-      sent: detail.emailStats.sent,
+      contactsMissingIdentity,
+      drafts: channelStats.draft,
+      pending: channelStats.pendingApproval,
+      sent: channelStats.sent,
     };
-  }, [detail]);
+  }, [detail, channelStats, isWhatsapp]);
 
   const workflowStep = useMemo(() => {
     if (!detail || !readiness) return 0;
@@ -180,16 +200,33 @@ export function CampaignDetailPage() {
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading campaign...</p>;
   if (!detail) return <p className="text-sm text-muted-foreground">Campaign not found.</p>;
 
-  const { campaign, leads, pipelineBreakdown, emailStats } = detail;
-  const hasApproved = emailStats.approved > 0;
+  const { campaign, leads, pipelineBreakdown, emailStats, whatsappStats } = detail;
+  const stats =
+    (campaign.channel === CampaignChannel.WHATSAPP ? whatsappStats : emailStats) ??
+    emailStats ?? {
+      draft: 0,
+      pendingApproval: 0,
+      approved: 0,
+      scheduled: 0,
+      sent: 0,
+      failed: 0,
+    };
+  const hasApproved = stats.approved > 0;
 
   const workflowSteps = [
     { label: "Add leads", count: leads.length },
-    { label: "Generate", count: emailStats.draft },
-    { label: "Submit", count: emailStats.draft },
-    { label: "Approve", count: emailStats.pendingApproval },
-    { label: "Sent", count: emailStats.sent },
+    { label: "Generate", count: stats.draft },
+    { label: "Submit", count: stats.draft },
+    { label: "Approve", count: stats.pendingApproval },
+    { label: "Sent", count: stats.sent },
   ];
+
+  async function saveFlow(flow: CampaignFlowDefinition, nextChannel?: CampaignChannel) {
+    await updateCampaign.mutateAsync({
+      flowDefinition: flow,
+      ...(nextChannel ? { channel: nextChannel } : {}),
+    });
+  }
 
   function toggleLead(leadId: string) {
     setSelectedLeadIds((prev) => {
@@ -222,6 +259,7 @@ export function CampaignDetailPage() {
           </Link>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">{campaign.name}</h1>
+            <Badge variant="secondary">{campaign.channel === "whatsapp" ? "WhatsApp" : "Email"}</Badge>
             <Badge variant={STATUS_VARIANT[campaign.status]}>{titleCase(campaign.status)}</Badge>
           </div>
           {campaign.description && <p className="text-sm text-muted-foreground">{campaign.description}</p>}
@@ -251,6 +289,40 @@ export function CampaignDetailPage() {
         )}
       </div>
 
+      <div className="flex gap-1 rounded-lg border border-border bg-muted/40 p-1 w-fit">
+        {(["flow", "leads", "activity"] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors",
+              tab === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {key}
+          </button>
+        ))}
+      </div>
+
+      {tab === "flow" && (
+        <CampaignFlowCanvas
+          channel={campaign.channel ?? CampaignChannel.EMAIL}
+          flowDefinition={campaign.flowDefinition}
+          emailStats={emailStats}
+          whatsappStats={whatsappStats}
+          templates={(templatesQuery.data ?? []).map((t) => ({
+            name: t.name,
+            language: t.language,
+            status: t.status,
+          }))}
+          onSave={saveFlow}
+          onSyncTemplates={() => syncTemplates.mutate()}
+          syncingTemplates={syncTemplates.isPending}
+          saving={updateCampaign.isPending}
+        />
+      )}
+
       <Card>
         <CardContent className="flex flex-wrap items-center gap-2 pt-6">
           {workflowSteps.map((step, i) => (
@@ -279,9 +351,10 @@ export function CampaignDetailPage() {
             <p>
               <span className="font-medium">{readiness.contactsReadyToGenerate}</span> contacts ready to generate
             </p>
-            {readiness.contactsMissingEmail > 0 && (
+            {readiness.contactsMissingIdentity > 0 && (
               <p className="text-muted-foreground">
-                {readiness.contactsMissingEmail} contacts missing email — reveal on the lead page
+                {readiness.contactsMissingIdentity} contacts missing{" "}
+                {campaign.channel === "whatsapp" ? "phone" : "email"} — update on the lead page
               </p>
             )}
             <p>
@@ -295,17 +368,21 @@ export function CampaignDetailPage() {
                 </Link>
               </p>
             )}
-            <p className="text-xs text-muted-foreground">Emails send automatically when approved in Approval Center.</p>
+            <p className="text-xs text-muted-foreground">
+              {campaign.channel === "whatsapp"
+                ? "WhatsApp messages send via Meta Cloud API when approved."
+                : "Emails send when approved in Approval Center (Gmail/SMTP)."}
+            </p>
           </CardContent>
         </Card>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard label="Leads" value={leads.length} />
-        <KpiCard label="Drafts" value={emailStats.draft} />
-        <KpiCard label="Pending approval" value={emailStats.pendingApproval} />
-        <KpiCard label="Approved" value={emailStats.approved} />
-        <KpiCard label="Sent" value={emailStats.sent} />
+        <KpiCard label="Drafts" value={stats.draft} />
+        <KpiCard label="Pending approval" value={stats.pendingApproval} />
+        <KpiCard label="Approved" value={stats.approved} />
+        <KpiCard label="Sent" value={stats.sent} />
       </div>
 
       {isAdmin && (
@@ -408,7 +485,7 @@ export function CampaignDetailPage() {
                 generateEmails.mutate(undefined, {
                   onSuccess: (res) => {
                     setLastBatchResult(res.data);
-                    batchToast(toast, "Emails generated", res.data);
+                    batchToast(toast, isWhatsapp ? "WhatsApp drafts generated" : "Emails generated", res.data);
                   },
                   onError: (err) => toast({ title: "Generation failed", description: err.message, variant: "error" }),
                 })
@@ -420,7 +497,7 @@ export function CampaignDetailPage() {
             <Button
               variant={workflowStep === 2 ? "default" : "outline"}
               className="gap-2"
-              disabled={emailStats.draft === 0 || submitAll.isPending}
+              disabled={stats.draft === 0 || submitAll.isPending}
               onClick={() =>
                 submitAll.mutate(undefined, {
                   onSuccess: (res) => {
@@ -434,10 +511,10 @@ export function CampaignDetailPage() {
               <Send className="h-4 w-4" /> Submit all
             </Button>
 
-            {emailStats.pendingApproval > 0 && (
+            {stats.pendingApproval > 0 && (
               <Button asChild variant="outline" className="gap-2">
                 <Link to={`/approval?campaignId=${id}`}>
-                  Review in Approval Center ({emailStats.pendingApproval})
+                  Review in Approval Center ({stats.pendingApproval})
                 </Link>
               </Button>
             )}
@@ -530,7 +607,7 @@ export function CampaignDetailPage() {
         </Card>
       )}
 
-      {Object.keys(pipelineBreakdown).length > 0 && (
+      {Object.keys(pipelineBreakdown).length > 0 && tab === "activity" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Pipeline breakdown</CardTitle>
@@ -545,6 +622,7 @@ export function CampaignDetailPage() {
         </Card>
       )}
 
+      {(tab === "leads" || tab === "activity") && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Leads in campaign</CardTitle>
@@ -561,7 +639,7 @@ export function CampaignDetailPage() {
                   {isAdmin && <TableHead className="w-10" />}
                   <TableHead>Company</TableHead>
                   <TableHead>Pipeline status</TableHead>
-                  <TableHead>Latest email</TableHead>
+                  <TableHead>Latest outreach</TableHead>
                   <TableHead>Contacts</TableHead>
                 </TableRow>
               </TableHeader>
@@ -586,8 +664,10 @@ export function CampaignDetailPage() {
                       <Badge variant="outline">{titleCase(lead.pipelineStatus)}</Badge>
                     </TableCell>
                     <TableCell>
-                      {lead.latestEmailStatus ? (
-                        <Badge variant="secondary">{titleCase(lead.latestEmailStatus)}</Badge>
+                      {(isWhatsapp ? lead.latestWhatsappStatus : lead.latestEmailStatus) ? (
+                        <Badge variant="secondary">
+                          {titleCase((isWhatsapp ? lead.latestWhatsappStatus : lead.latestEmailStatus) ?? "")}
+                        </Badge>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
@@ -597,7 +677,9 @@ export function CampaignDetailPage() {
                         <span className="text-muted-foreground">None</span>
                       ) : (
                         <div className="space-y-2 text-sm">
-                          {lead.companyContacts.map((contact) => (
+                          {lead.companyContacts.map((contact) => {
+                            const status = isWhatsapp ? contact.latestWhatsappStatus : contact.latestEmailStatus;
+                            return (
                             <div key={contact.contactId} className="flex flex-wrap items-start justify-between gap-2">
                               <div>
                                 <div className="flex items-center gap-2">
@@ -610,16 +692,20 @@ export function CampaignDetailPage() {
                                     </Badge>
                                   )}
                                 </div>
-                                <p className="text-muted-foreground">{contact.email ?? "Email not revealed"}</p>
+                                <p className="text-muted-foreground">
+                                  {isWhatsapp
+                                    ? contact.phone ?? "Phone missing"
+                                    : contact.email ?? "Email not revealed"}
+                                </p>
                               </div>
                               <Badge
-                                variant={CONTACT_STATUS_VARIANT[contact.latestEmailStatus ?? ""] ?? "outline"}
+                                variant={CONTACT_STATUS_VARIANT[status ?? ""] ?? "outline"}
                                 className="shrink-0"
                               >
-                                {contactStatusLabel(contact.latestEmailStatus)}
+                                {contactStatusLabel(status)}
                               </Badge>
                             </div>
-                          ))}
+                          );})}
                         </div>
                       )}
                     </TableCell>
@@ -630,6 +716,7 @@ export function CampaignDetailPage() {
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

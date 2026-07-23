@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
-import { ROLE_RANK, UserRole } from "@bluwheelz/shared";
+import { CampaignChannel, ROLE_RANK, UserRole } from "@bluwheelz/shared";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,7 @@ export function CampaignsPage() {
   const createCampaign = useCreateCampaign();
   const { toast } = useToast();
   const [name, setName] = useState("");
+  const [channel, setChannel] = useState<CampaignChannel>(CampaignChannel.EMAIL);
   const [open, setOpen] = useState(false);
   const [sortBy, setSortBy] = useState<SortKey>("name");
 
@@ -47,8 +48,10 @@ export function CampaignsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
-          <p className="text-sm text-muted-foreground">Batch outreach efforts, each still gated by individual email approval.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Campaign Manager</h1>
+          <p className="text-sm text-muted-foreground">
+            Design Email or WhatsApp flows visually. Every send still requires human approval.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
@@ -72,20 +75,40 @@ export function CampaignsPage() {
                 <DialogHeader>
                   <DialogTitle>Create Campaign</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-1.5">
-                  <Label htmlFor="campaign-name">Name</Label>
-                  <Input id="campaign-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Q1 Logistics Push" />
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="campaign-name">Name</Label>
+                    <Input
+                      id="campaign-name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Q1 Logistics Push"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Channel</Label>
+                    <Select value={channel} onValueChange={(v) => setChannel(v as CampaignChannel)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="email">Email</SelectItem>
+                        <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <DialogFooter>
                   <Button
                     disabled={!name || createCampaign.isPending}
                     onClick={() =>
                       createCampaign.mutate(
-                        { name },
+                        { name, channel, useRecommendedFlow: true },
                         {
                           onSuccess: (res) => {
                             setOpen(false);
                             setName("");
+                            setChannel(CampaignChannel.EMAIL);
                             toast({ title: "Campaign created", variant: "success" });
                             navigate(`/campaigns/${res.data.id}`);
                           },
@@ -93,7 +116,7 @@ export function CampaignsPage() {
                       )
                     }
                   >
-                    Create
+                    Create with recommended flow
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -103,29 +126,36 @@ export function CampaignsPage() {
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <p className="text-sm text-muted-foreground">Loading campaigns...</p>
       ) : sorted.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No campaigns yet.{isAdmin ? " Create one to group and schedule outreach." : ""}</p>
+        <Card>
+          <CardContent className="py-12 text-center text-sm text-muted-foreground">
+            No campaigns yet. Create one to design your first outreach flow.
+          </CardContent>
+        </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {sorted.map((c) => (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {sorted.map((campaign) => (
             <Card
-              key={c.id}
+              key={campaign.id}
               className="cursor-pointer transition-colors hover:border-primary/40"
-              onClick={() => navigate(`/campaigns/${c.id}`)}
+              onClick={() => navigate(`/campaigns/${campaign.id}`)}
             >
-              <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-base">{c.name}</CardTitle>
-                <Badge variant={STATUS_VARIANT[c.status]}>{titleCase(c.status)}</Badge>
+              <CardHeader className="flex-row items-start justify-between space-y-0 pb-2">
+                <CardTitle className="text-base">{campaign.name}</CardTitle>
+                <div className="flex gap-1">
+                  <Badge variant="secondary">{campaign.channel === "whatsapp" ? "WhatsApp" : "Email"}</Badge>
+                  <Badge variant={STATUS_VARIANT[campaign.status]}>{titleCase(campaign.status)}</Badge>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>{c.leadCount ?? 0} leads</p>
-                {c.emailStats && (
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{c.emailStats.draft} drafts</Badge>
-                    <Badge variant="outline">{c.emailStats.pendingApproval} pending</Badge>
-                    <Badge variant="outline">{c.emailStats.sent} sent</Badge>
-                  </div>
+              <CardContent className="space-y-1 text-sm text-muted-foreground">
+                <p>{campaign.leadCount ?? 0} leads</p>
+                <p>
+                  {campaign.emailStats?.sent ?? 0} sent · {campaign.emailStats?.pendingApproval ?? 0} pending
+                  approval
+                </p>
+                {(campaign.flowDefinition?.nodes?.length ?? 0) > 0 && (
+                  <p className="text-xs text-foreground/70">Flow configured</p>
                 )}
               </CardContent>
             </Card>

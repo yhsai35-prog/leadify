@@ -1,10 +1,12 @@
 import { Plug, Mail, CheckCircle2, Circle, Server, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/hooks/useAuth";
+import { apiClient } from "@/lib/apiClient";
 import { useUserSettings, useUpdateUserSettings } from "./useUserSettings";
 
 interface IntegrationCardProps {
@@ -77,6 +79,48 @@ function IntegrationCard({
   );
 }
 
+function WhatsAppStatusCard() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["whatsapp-status"],
+    queryFn: () => apiClient.get<{ data: { configured: boolean } }>("/whatsapp/status").then((r) => r.data),
+  });
+  const configured = Boolean(data?.configured);
+
+  return (
+    <Card className={configured ? "ring-2 ring-primary" : undefined}>
+      <CardHeader className="flex-row items-start gap-4 pb-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-lg font-semibold">
+          WA
+        </div>
+        <div className="flex-1 space-y-0.5">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">Meta WhatsApp Cloud API</CardTitle>
+            <Badge variant={configured ? "success" : "secondary"} className="text-[10px]">
+              {isLoading ? "…" : configured ? "Configured" : "Not configured"}
+            </Badge>
+          </div>
+          <CardDescription className="text-sm">
+            Used for WhatsApp campaigns. Set WHATSAPP_* env vars on the API (Phone Number ID, WABA ID, token,
+            verify token, app secret). Webhook: /v1/webhooks/whatsapp
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {configured ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle2 className="h-4 w-4 text-primary" />
+            Ready to sync templates and send approved messages
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Add Meta credentials to the API environment, then sync templates from a WhatsApp campaign Flow tab.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function IntegrationsPage() {
   const { user } = useAuth();
   const { data: settings, isLoading } = useUserSettings();
@@ -116,6 +160,11 @@ export function IntegrationsPage() {
         <p className="text-sm text-muted-foreground">Loading...</p>
       ) : (
         <>
+          <div>
+            <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">WhatsApp</h2>
+            <WhatsAppStatusCard />
+          </div>
+
           <div>
             <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">Email Clients</h2>
             <p className="mb-4 text-xs text-muted-foreground">

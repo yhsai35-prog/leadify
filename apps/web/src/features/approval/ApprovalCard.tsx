@@ -25,30 +25,43 @@ export function ApprovalCard({ item }: { item: ApprovalQueueItem }) {
   const editApprove = useEditAndApprove();
   const { toast } = useToast();
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [isRejecting, setIsRejecting] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
-  const [editedBody, setEditedBody] = useState(item.email?.bodyText ?? "");
-
+  const isWhatsapp = Boolean(item.whatsappMessageId);
   const email = item.email;
+  const wa = item.whatsappMessage;
   const company = item.lead?.company;
-  const contact = item.email?.contact ?? item.lead?.contact;
+  const contact = email?.contact ?? wa?.contact ?? item.lead?.contact;
   const contactEmail = contact?.email;
+  const contactPhone = contact?.phone;
   const contactName = contact
     ? [contact.firstName, contact.lastName].filter(Boolean).join(" ").trim()
     : "";
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [editedBody, setEditedBody] = useState(isWhatsapp ? (wa?.bodyPreview ?? "") : (email?.bodyText ?? ""));
+
+  const canApprove = isWhatsapp ? Boolean(contactPhone) : Boolean(contactEmail);
+  const title = isWhatsapp
+    ? `WhatsApp · ${wa?.templateName ?? "template"}`
+    : email?.subject ?? "Outreach draft";
 
   return (
     <Card>
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
-          <CardTitle className="text-base">{email?.subject}</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">{title}</CardTitle>
+            <Badge variant="secondary">{isWhatsapp ? "WhatsApp" : "Email"}</Badge>
+          </div>
           <p className="text-xs text-muted-foreground">
             {contactName || "Unknown POC"}
             {contact?.title ? ` — ${contact.title}` : ""} &middot; {company?.name ?? "Unknown company"} &middot;
             submitted {formatDateTime(item.createdAt)}
           </p>
-          {contactEmail && <p className="mt-1 text-xs text-muted-foreground">{contactEmail}</p>}
+          {isWhatsapp
+            ? contactPhone && <p className="mt-1 text-xs text-muted-foreground">{contactPhone}</p>
+            : contactEmail && <p className="mt-1 text-xs text-muted-foreground">{contactEmail}</p>}
         </div>
         <Badge variant="warning">Pending Approval</Badge>
       </CardHeader>
@@ -56,7 +69,9 @@ export function ApprovalCard({ item }: { item: ApprovalQueueItem }) {
         {isEditing ? (
           <Textarea value={editedBody} onChange={(e) => setEditedBody(e.target.value)} rows={8} />
         ) : (
-          <div className="whitespace-pre-wrap rounded-md bg-muted/50 p-3 text-sm">{email?.bodyText}</div>
+          <div className="whitespace-pre-wrap rounded-md bg-muted/50 p-3 text-sm">
+            {isWhatsapp ? wa?.bodyPreview : email?.bodyText}
+          </div>
         )}
 
         {isRejecting && (
@@ -68,9 +83,11 @@ export function ApprovalCard({ item }: { item: ApprovalQueueItem }) {
           />
         )}
 
-        {!contactEmail && (
+        {!canApprove && (
           <p className="text-sm text-amber-700 dark:text-amber-400">
-            This contact has no email address yet. Reveal or add an email on the lead page before approving — otherwise the message cannot be sent.
+            {isWhatsapp
+              ? "This contact has no phone number yet. Add a phone on the lead page before approving."
+              : "This contact has no email address yet. Reveal or add an email on the lead page before approving."}
           </p>
         )}
 
@@ -81,7 +98,7 @@ export function ApprovalCard({ item }: { item: ApprovalQueueItem }) {
                 size="sm"
                 variant="success"
                 className="gap-2"
-                disabled={approve.isPending || !contactEmail}
+                disabled={approve.isPending || !canApprove}
                 onClick={() =>
                   approve.mutate(item.id, {
                     onSuccess: (result) => toast(approvalToast(result)),
@@ -108,20 +125,27 @@ export function ApprovalCard({ item }: { item: ApprovalQueueItem }) {
               <Button
                 size="sm"
                 variant="success"
-                disabled={editApprove.isPending || !contactEmail}
+                disabled={editApprove.isPending || !canApprove}
                 onClick={() =>
                   editApprove.mutate(
-                    { approvalId: item.id, editedContent: { bodyText: editedBody } },
                     {
-                      onSuccess: (result) => toast(approvalToast(result)),
-                      onError: (err) => toast({ title: "Failed to save", description: err.message, variant: "error" }),
+                      id: item.id,
+                      editedContent: isWhatsapp ? { bodyPreview: editedBody } : { bodyText: editedBody },
+                    },
+                    {
+                      onSuccess: (result) => {
+                        setIsEditing(false);
+                        toast(approvalToast(result));
+                      },
+                      onError: (err) =>
+                        toast({ title: "Edit-approve failed", description: err.message, variant: "error" }),
                     },
                   )
                 }
               >
                 Save & Approve
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)}>
+              <Button size="sm" variant="outline" onClick={() => setIsEditing(false)}>
                 Cancel
               </Button>
             </>
@@ -132,20 +156,21 @@ export function ApprovalCard({ item }: { item: ApprovalQueueItem }) {
               <Button
                 size="sm"
                 variant="destructive"
-                disabled={reject.isPending || rejectReason.trim().length === 0}
+                disabled={!rejectReason.trim() || reject.isPending}
                 onClick={() =>
                   reject.mutate(
-                    { approvalId: item.id, reviewerNotes: rejectReason },
+                    { id: item.id, reviewerNotes: rejectReason },
                     {
-                      onSuccess: () => toast({ title: "Rejected", variant: "info" }),
-                      onError: (err) => toast({ title: "Failed to reject", description: err.message, variant: "error" }),
+                      onSuccess: () => toast({ title: "Outreach rejected", variant: "info" }),
+                      onError: (err) =>
+                        toast({ title: "Reject failed", description: err.message, variant: "error" }),
                     },
                   )
                 }
               >
-                Confirm Reject
+                Confirm reject
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsRejecting(false)}>
+              <Button size="sm" variant="outline" onClick={() => setIsRejecting(false)}>
                 Cancel
               </Button>
             </>

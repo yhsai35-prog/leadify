@@ -50,6 +50,9 @@ function contactEnrichmentPatch(
 
   const metadata = { ...(existing.metadata ?? {}) } as Record<string, unknown>;
   let metadataChanged = false;
+  if (person.phone && !existing.phone) {
+    patch.phone = person.phone;
+  }
   if (person.phone && !metadata.phone) {
     metadata.phone = person.phone;
     metadataChanged = true;
@@ -349,6 +352,7 @@ export const apolloService = {
           firstName: person.firstName,
           lastName: person.lastName,
           email: person.email,
+          phone: person.phone ?? null,
           title: person.title,
           linkedinUrl: person.linkedinUrl,
           isDecisionMaker: isDecisionMakerTitle(person.title),
@@ -410,6 +414,7 @@ export const apolloService = {
           firstName: person.firstName,
           lastName: person.lastName,
           email: person.email,
+          phone: person.phone ?? null,
           title: person.title,
           linkedinUrl: person.linkedinUrl,
           isDecisionMaker: isDecisionMakerTitle(person.title),

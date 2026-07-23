@@ -29,7 +29,7 @@ const NAV_ITEMS = [
   { to: "/pipeline", label: "Pipeline", icon: Kanban, minRole: UserRole.USER },
   { to: "/companies", label: "Companies", icon: Building2, minRole: UserRole.USER },
   { to: "/approval", label: "Approval Center", icon: ShieldCheck, minRole: UserRole.USER },
-  { to: "/campaigns", label: "Campaigns", icon: Megaphone, minRole: UserRole.USER },
+  { to: "/campaigns", label: "Campaign Manager", icon: Megaphone, minRole: UserRole.USER },
   { to: "/similarity", label: "Client Similarity", icon: GitCompareArrows, minRole: UserRole.USER },
   { to: "/copilot", label: "AI Copilot", icon: Bot, minRole: UserRole.USER },
   { to: "/integrations", label: "Integrations", icon: Plug, minRole: UserRole.USER },
